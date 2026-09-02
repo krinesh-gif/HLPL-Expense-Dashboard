@@ -110,9 +110,23 @@ being the unacknowledged 01-Sep hand-over.
 
 ## Deploying
 
-Any Node host works. On Vercel, add `DATABASE_URL` (Neon or Supabase) and `AUTH_SECRET`
-(`openssl rand -base64 32`), then run `npx prisma migrate deploy` and `npm run seed`
-once against the production database.
+Step-by-step Neon + Vercel instructions are in **[docs/DEPLOY.md](docs/DEPLOY.md)**,
+including the two connection strings Neon needs and the common failure messages.
+
+Any Node host works. The app needs `DATABASE_URL` (pooled), `DIRECT_URL` (unpooled, for
+migrations) and `AUTH_SECRET`.
+
+## Managing users
+
+There is no user admin screen yet; both jobs are one command:
+
+```bash
+npm run set-password -- wh@araviorganic.com 'new-password'
+npm run add-user -- "Ravi Patel" ravi@araviorganic.com WH 'their-password'
+```
+
+To revoke access, untick `active` on the user in `npx prisma studio` — they are signed
+out on their next request and their past entries keep their author.
 
 ## Notes on the numbers
 
