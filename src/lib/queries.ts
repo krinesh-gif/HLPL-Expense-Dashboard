@@ -5,7 +5,15 @@ import { fiscalYear, monthBounds, monthKey, n } from "./money";
 
 export const LIVE = { voidedAt: null };
 
-/** Categories a cost centre may book to, ordered by how often this user picks them. */
+/**
+ * Categories a cost centre may book to, most-used first.
+ *
+ * Ranked on the whole cost centre's history rather than the signed-in user's own,
+ * because a newly added warehouse or head-office account has no history of its
+ * own — the migrated rows belong to the import's placeholder users — and would
+ * otherwise get an arbitrary order until it had built one up. Recent entries
+ * count for more, so the order tracks what the team is actually booking now.
+ */
 export async function entryCategories(userId: string, cc: CostCenter) {
   // UNCLASSIFIED only exists to hold migrated rows; nobody should book to it afresh.
   const cats = await prisma.category.findMany({
@@ -13,17 +21,29 @@ export async function entryCategories(userId: string, cc: CostCenter) {
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  const since = new Date(Date.now() - 90 * 864e5);
-  const freq = await prisma.expense.groupBy({
-    by: ["categoryId"],
-    where: { enteredById: userId, date: { gte: since }, ...LIVE },
-    _count: { _all: true },
-  });
-  const rank = new Map(freq.map((f) => [f.categoryId, f._count._all]));
+  const since = new Date(Date.now() - 120 * 864e5);
+  const [recent, ever] = await Promise.all([
+    prisma.expense.groupBy({
+      by: ["categoryId"],
+      where: { costCenter: cc, date: { gte: since }, ...LIVE },
+      _count: { _all: true },
+    }),
+    prisma.expense.groupBy({
+      by: ["categoryId"],
+      where: { costCenter: cc, ...LIVE },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const recentBy = new Map(recent.map((f) => [f.categoryId, f._count._all]));
+  const everBy = new Map(ever.map((f) => [f.categoryId, f._count._all]));
 
   return cats
-    .map((c) => ({ ...c, uses: rank.get(c.id) ?? 0 }))
-    .sort((a, b) => b.uses - a.uses || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    .map((c) => {
+      const uses = everBy.get(c.id) ?? 0;
+      return { ...c, uses, score: (recentBy.get(c.id) ?? 0) * 3 + uses };
+    })
+    .sort((a, b) => b.score - a.score || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 
 /** Spend against each category's monthly budget, for the given month and cost centre. */

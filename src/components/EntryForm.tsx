@@ -35,7 +35,7 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
 
   const cat = categories.find((c) => c.id === catId);
   const amt = parseFloat(amount) || 0;
-  const quick = useMemo(() => categories.slice(0, 8), [categories]);
+  const quick = useMemo(() => categories.slice(0, 14), [categories]);
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -79,7 +79,7 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
         </div>
 
         {!showAll ? (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {quick.map((c) => (
               <Chip key={c.id} active={catId === c.id} color={c.color} icon={c.icon}
                     onClick={() => setCatId(c.id)}>{c.name}</Chip>
@@ -89,11 +89,11 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
           <div className="mt-2">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search category…"
                    className="input mb-3" aria-label="Search category" />
-            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
               {filtered.map(([group, items]) => (
                 <div key={group}>
                   <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{group}</p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {items.map((c) => (
                       <Chip key={c.id} active={catId === c.id} color={c.color} icon={c.icon}
                             onClick={() => { setCatId(c.id); setShowAll(false); setQ(""); }}>
@@ -198,10 +198,11 @@ function Chip({
       style={active
         ? { background: "var(--chip-solid)", borderColor: "var(--chip-solid)", color: "#fff" }
         : { background: "var(--chip-soft)", borderColor: "transparent", color: "var(--chip-ink)" }}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium
-                 transition active:scale-[0.97] hover:brightness-95 ${cls}`}>
-      <span aria-hidden className="text-[15px] leading-none">{icon}</span>
-      {children}
+      className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1.5
+                  text-[13px] font-medium leading-tight transition
+                  active:scale-[0.97] hover:brightness-95 ${cls}`}>
+      <span aria-hidden className="text-[13px] leading-none">{icon}</span>
+      <span className="truncate">{children}</span>
     </button>
   );
 }
