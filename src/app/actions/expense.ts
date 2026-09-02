@@ -54,33 +54,65 @@ export async function addExpense(_prev: EntryState, form: FormData): Promise<Ent
 }
 
 /**
- * Entries are never deleted. Voiding keeps the audit trail intact and removes the
- * row from every total. A team member may only void their own cost centre's rows.
+ * Edit an existing entry. A team member may only touch their own cost centre's rows;
+ * the founder may edit anything. The category is re-checked against the row's cost
+ * centre so an edit cannot move a spend onto a head that team is not allowed to use.
  */
-export async function voidExpense(form: FormData) {
+export async function updateExpense(_prev: EntryState, form: FormData): Promise<EntryState> {
   const s = await requireUser();
   const id = String(form.get("id") ?? "");
-  const reason = String(form.get("reason") ?? "").trim() || "Entered in error";
 
   const existing = await prisma.expense.findFirst({ where: { id, ...expenseScope(s) } });
-  if (!existing) return;
+  if (!existing) return { error: "That entry is not yours to edit." };
+
+  const parsed = Schema.safeParse(Object.fromEntries(form));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const d = parsed.data;
+
+  const cat = await prisma.category.findUnique({ where: { id: d.categoryId } });
+  if (!cat) return { error: "That category is not available." };
+  if (!cat.costCenters.includes(existing.costCenter)) {
+    return { error: `“${cat.name}” is not open to ${existing.costCenter}. Pick another head.` };
+  }
+  if (cat.requiresBill && n(cat.billThreshold) <= d.amount && !d.billNo) {
+    return { error: `“${cat.name}” needs a bill number for ₹${d.amount.toLocaleString("en-IN")}.` };
+  }
 
   await prisma.expense.update({
     where: { id },
-    data: { voidedAt: new Date(), voidReason: reason },
+    data: {
+      date: new Date(d.date + "T00:00:00Z"),
+      categoryId: d.categoryId,
+      amount: d.amount,
+      paymentMode: d.paymentMode,
+      paidTo: d.paidTo || null,
+      description: d.description || null,
+      billNo: d.billNo || null,
+    },
   });
+
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
+  return { ok: "Saved." };
 }
 
-/** Founder-only: move a badly-tagged row (mostly migrated ones) to the right head. */
-export async function retagExpense(form: FormData) {
+/**
+ * Removing an entry marks it void rather than deleting the row, so the audit trail
+ * survives. Voided rows are excluded from every total and from the list.
+ */
+export async function deleteExpense(_prev: EntryState, form: FormData): Promise<EntryState> {
   const s = await requireUser();
-  if (s.role !== "FOUNDER") return;
   const id = String(form.get("id") ?? "");
-  const categoryId = String(form.get("categoryId") ?? "");
-  if (!id || !categoryId) return;
-  await prisma.expense.update({ where: { id }, data: { categoryId } });
+
+  const existing = await prisma.expense.findFirst({ where: { id, ...expenseScope(s) } });
+  if (!existing) return { error: "That entry is not yours to remove." };
+
+  await prisma.expense.update({
+    where: { id },
+    data: { voidedAt: new Date(), voidReason: String(form.get("reason") ?? "").trim() || "Removed by user" },
+  });
+
   revalidatePath("/expenses");
   revalidatePath("/dashboard");
+  return { ok: "Entry removed." };
 }

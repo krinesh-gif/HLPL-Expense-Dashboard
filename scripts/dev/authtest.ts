@@ -32,6 +32,14 @@ async function main() {
     }
   }
 
+  console.log("\n=== row counts per role (must equal that role's own rows) ===");
+  for (const [who, c, cc] of [["wh", W, "WH"], ["ho", H, "HO"], ["founder", F, null]] as const) {
+    const html = await (await get("/expenses", c)).text();
+    const onPage = (html.match(/aria-expanded="false"/g) ?? []).length;
+    const inDb = await prisma.expense.count({ where: { voidedAt: null, ...(cc ? { costCenter: cc as "WH" } : {}) } });
+    console.log(`${who.padEnd(8)} on page: ${onPage}  in db: ${inDb}  match: ${onPage === inDb}`);
+  }
+
   console.log("\n=== data leakage: does WH see HO/founder rows? ===");
   // Pick distinctive strings that exist only in one cost centre.
   const hoRow = await prisma.expense.findFirst({ where: { costCenter: "HO", description: { not: null } }, orderBy: { amount: "desc" } });
