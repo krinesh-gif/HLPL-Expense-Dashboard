@@ -62,6 +62,10 @@ model Category {
   group        String       /// P&L grouping, e.g. "Logistics", "Manpower", "Facility"
   tallyLedger  String       /// ledger name to post against in Tally
   costCenters  CostCenter[] /// which teams may book to this head
+  /// emoji shown before the name, e.g. "📦"
+  icon         String       @default("🔖")
+  /// palette key resolved in src/lib/palette.ts, e.g. "blue"
+  color        String       @default("slate")
   monthlyBudget Decimal?    @db.Decimal(12, 2)
   requiresBill Boolean      @default(false)
   billThreshold Decimal?    @db.Decimal(12, 2) /// bill required above this amount

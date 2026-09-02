@@ -49,7 +49,7 @@ export async function categoryBreakdown(mKey: string) {
       const last = prevMap.get(c.id) ?? 0;
       const budget = c.monthlyBudget ? n(c.monthlyBudget) : null;
       return {
-        id: c.id, name: c.name, group: c.group, code: c.code,
+        id: c.id, name: c.name, group: c.group, code: c.code, icon: c.icon, color: c.color,
         spent, last, delta: spent - last,
         budget, over: budget !== null && budget > 0 && spent > budget,
         overBy: budget !== null ? spent - budget : 0,
@@ -64,7 +64,7 @@ export async function topEntries(mKey: string, take = 8) {
   const { start, end } = monthBounds(mKey);
   return prisma.expense.findMany({
     where: { date: { gte: start, lte: end }, ...LIVE },
-    include: { category: { select: { name: true } } },
+    include: { category: { select: { name: true, icon: true, color: true } } },
     orderBy: { amount: "desc" },
     take,
   });

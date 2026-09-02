@@ -1,9 +1,12 @@
 "use client";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { saveCategory, deleteCategory, type CatState } from "@/app/actions/category";
+import { COLOR_KEYS, ICON_CHOICES, colorOf, isColorKey } from "@/lib/palette";
+import { PencilIcon, TrashIcon, PlusIcon } from "./Icons";
 
 export type CatRow = {
   id: string; code: string; name: string; group: string; tallyLedger: string;
+  icon: string; color: string;
   costCenters: string[]; monthlyBudget: number; requiresBill: boolean; billThreshold: number;
   active: boolean; entries: number; spent: number;
 };
@@ -31,7 +34,9 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
 
   return (
     <div className="space-y-5">
-      <button onClick={() => setEditing("new")} className="btn-primary">Add category</button>
+      <button onClick={() => setEditing("new")} className="btn-primary">
+        <PlusIcon className="size-4" /> Add category
+      </button>
 
       {editing && (
         <Editor row={editing === "new" ? null : editing} onDone={() => setEditing(null)} />
@@ -49,6 +54,8 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
             <ul className="divide-y divide-line">
               {items.map((c) => (
                 <li key={c.id} className={`flex flex-wrap items-center gap-3 p-4 ${c.active ? "" : "opacity-50"}`}>
+                  <span aria-hidden className={`grid size-9 shrink-0 place-items-center rounded-xl text-lg ${isColorKey(c.color) ? `cat-${c.color}` : "cat-slate"}`}
+                        style={{ background: "var(--chip-soft)" }}>{c.icon}</span>
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-baseline gap-2">
                       <span className="font-medium">{c.name}</span>
@@ -78,11 +85,16 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
                     <button onClick={() => { setEditing(c); setRemoving(null); }}
-                            className="btn-ghost px-3 py-1.5 text-xs">Edit</button>
+                            aria-label={`Edit ${c.name}`} title="Edit" className="icon-btn">
+                      <PencilIcon className="size-4" />
+                    </button>
                     <button onClick={() => { setRemoving(c); setEditing(null); }}
-                            className="btn-ghost px-3 py-1.5 text-xs">Remove</button>
+                            aria-label={`Remove ${c.name}`} title="Remove"
+                            className="icon-btn hover:text-danger">
+                      <TrashIcon className="size-4" />
+                    </button>
                   </div>
                 </li>
               ))}
@@ -97,6 +109,8 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
 function Editor({ row, onDone }: { row: CatRow | null; onDone: () => void }) {
   const [state, action, pending] = useActionState<CatState, FormData>(saveCategory, {});
   const [requiresBill, setRequiresBill] = useState(row?.requiresBill ?? false);
+  const [icon, setIcon] = useState(row?.icon ?? "🔖");
+  const [color, setColor] = useState(row?.color ?? "slate");
   const ref = usePanelFocus();
   if (state.ok) queueMicrotask(onDone);
 
@@ -106,6 +120,34 @@ function Editor({ row, onDone }: { row: CatRow | null; onDone: () => void }) {
       <h2 className="text-sm font-semibold">{row ? `Edit ${row.name}` : "New category"}</h2>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <span className="label">Icon</span>
+          <input type="hidden" name="icon" value={icon} />
+          <div className="flex flex-wrap gap-1.5">
+            {ICON_CHOICES.map((e) => (
+              <button key={e} type="button" onClick={() => setIcon(e)} aria-pressed={icon === e}
+                className={`grid size-9 place-items-center rounded-lg border text-lg transition ${
+                  icon === e ? "border-brand bg-brand-soft" : "border-line bg-surface hover:bg-canvas"}`}>
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="sm:col-span-2">
+          <span className="label">Colour</span>
+          <input type="hidden" name="color" value={color} />
+          <div className="flex flex-wrap gap-1.5">
+            {COLOR_KEYS.map((k) => (
+              <button key={k} type="button" onClick={() => setColor(k)} aria-pressed={color === k}
+                aria-label={k} title={k}
+                className={`size-8 rounded-lg border-2 transition ${
+                  color === k ? "border-ink scale-105" : "border-transparent hover:scale-105"}`}
+                style={{ background: colorOf(k).solid }} />
+            ))}
+          </div>
+        </div>
+
         <div>
           <label className="label" htmlFor="c-name">Name</label>
           <input id="c-name" name="name" required defaultValue={row?.name} className="input" />

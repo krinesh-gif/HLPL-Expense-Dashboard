@@ -9,11 +9,15 @@ export default function NavLink({ href, label }: { href: string; label: string }
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
-        active ? "bg-brand-soft font-medium text-brand" : "text-muted hover:bg-canvas hover:text-ink"
+      className={`relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
+        active ? "font-semibold text-ink" : "text-muted hover:bg-canvas hover:text-body"
       }`}
     >
       {label}
+      {active && (
+        <span aria-hidden
+              className="absolute inset-x-3 -bottom-0.5 h-0.5 rounded-full bg-brand" />
+      )}
     </Link>
   );
 }

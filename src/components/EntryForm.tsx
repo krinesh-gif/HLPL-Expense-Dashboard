@@ -1,9 +1,10 @@
 "use client";
 import { useActionState, useMemo, useState, useRef, useEffect } from "react";
 import { addExpense, type EntryState } from "@/app/actions/expense";
+import { isColorKey } from "@/lib/palette";
 
 export type CatOption = {
-  id: string; name: string; group: string; uses: number;
+  id: string; name: string; icon: string; color: string; group: string; uses: number;
   budget: number | null; spent: number;
   requiresBill: boolean; billThreshold: number | null;
 };
@@ -80,7 +81,8 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
         {!showAll ? (
           <div className="mt-2 flex flex-wrap gap-2">
             {quick.map((c) => (
-              <Chip key={c.id} active={catId === c.id} onClick={() => setCatId(c.id)}>{c.name}</Chip>
+              <Chip key={c.id} active={catId === c.id} color={c.color} icon={c.icon}
+                    onClick={() => setCatId(c.id)}>{c.name}</Chip>
             ))}
           </div>
         ) : (
@@ -93,7 +95,7 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
                   <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{group}</p>
                   <div className="flex flex-wrap gap-2">
                     {items.map((c) => (
-                      <Chip key={c.id} active={catId === c.id}
+                      <Chip key={c.id} active={catId === c.id} color={c.color} icon={c.icon}
                             onClick={() => { setCatId(c.id); setShowAll(false); setQ(""); }}>
                         {c.name}
                       </Chip>
@@ -187,12 +189,18 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({
+  active, onClick, color, icon, children,
+}: { active: boolean; onClick: () => void; color: string; icon: string; children: React.ReactNode }) {
+  const cls = isColorKey(color) ? `cat-${color}` : "cat-slate";
   return (
     <button type="button" onClick={onClick} aria-pressed={active}
-      className={`rounded-full border px-3.5 py-2 text-sm transition ${
-        active ? "border-brand bg-brand text-white" : "border-line bg-surface text-ink hover:border-brand/40 hover:bg-canvas"
-      }`}>
+      style={active
+        ? { background: "var(--chip-solid)", borderColor: "var(--chip-solid)", color: "#fff" }
+        : { background: "var(--chip-soft)", borderColor: "transparent", color: "var(--chip-ink)" }}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium
+                 transition active:scale-[0.97] hover:brightness-95 ${cls}`}>
+      <span aria-hidden className="text-[15px] leading-none">{icon}</span>
       {children}
     </button>
   );

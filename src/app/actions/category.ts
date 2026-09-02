@@ -14,6 +14,8 @@ const Schema = z.object({
   id: z.string().optional(),
   code: z.string().trim().min(2).max(30).regex(/^[A-Z0-9_]+$/, "Code must be capitals, digits and underscores."),
   name: z.string().trim().min(2).max(60),
+  icon: z.string().trim().min(1).max(8),
+  color: z.string().trim().min(2).max(20),
   group: z.string().trim().min(2).max(40),
   tallyLedger: z.string().trim().min(2).max(60),
   monthlyBudget: money,

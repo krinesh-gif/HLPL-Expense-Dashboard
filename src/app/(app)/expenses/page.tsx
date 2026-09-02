@@ -1,15 +1,15 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireUser, expenseScope } from "@/lib/auth";
 import { LIVE } from "@/lib/queries";
 import { rs, monthBounds, fyMonths, fiscalYear } from "@/lib/money";
 import ExpenseTable from "@/components/ExpenseTable";
+import ExpenseFilters from "@/components/ExpenseFilters";
 
 const CC_LABEL = { WH: "Warehouse", HO: "Head Office", FOUNDER: "Founder" } as const;
 
 export default async function ExpensesPage({
   searchParams,
-}: { searchParams: Promise<{ m?: string; cc?: string }> }) {
+}: { searchParams: Promise<{ m?: string; cc?: string; cat?: string }> }) {
   const s = await requireUser();
   const sp = await searchParams;
   const founder = s.role === "FOUNDER";
@@ -19,15 +19,20 @@ export default async function ExpensesPage({
   const dateFilter = m ? { date: { gte: monthBounds(m).start, lte: monthBounds(m).end } } : {};
   const ccFilter = founder && sp.cc && sp.cc !== "ALL" ? { costCenter: sp.cc as "WH" } : {};
 
+  // ?cat=id,id,id - empty means every category
+  const picked = (sp.cat ?? "").split(",").filter(Boolean);
+  const catFilter = picked.length ? { categoryId: { in: picked } } : {};
+
   const [rows, cats] = await Promise.all([
     prisma.expense.findMany({
-      where: { ...dateFilter, ...expenseScope(s), ...ccFilter, ...LIVE },
-      include: { category: { select: { id: true, name: true } } },
+      where: { ...dateFilter, ...expenseScope(s), ...ccFilter, ...catFilter, ...LIVE },
+      include: { category: { select: { id: true, name: true, icon: true, color: true } } },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     }),
     prisma.category.findMany({
       where: { active: true },
-      select: { id: true, name: true, group: true, costCenters: true, requiresBill: true, billThreshold: true },
+      select: { id: true, name: true, group: true, costCenters: true, requiresBill: true,
+                billThreshold: true, icon: true, color: true },
       orderBy: [{ group: "asc" }, { sortOrder: "asc" }],
     }),
   ]);
@@ -44,29 +49,18 @@ export default async function ExpensesPage({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        <Chip href={`/expenses${sp.cc ? `?cc=${sp.cc}` : ""}`} active={!m}>All months</Chip>
-        {months.map((mo) => (
-          <Chip key={mo.key} href={`/expenses?m=${mo.key}${sp.cc ? `&cc=${sp.cc}` : ""}`} active={mo.key === m}>
-            {mo.label}
-          </Chip>
-        ))}
-      </div>
-
-      {founder && (
-        <div className="flex flex-wrap gap-1.5">
-          {(["ALL", "WH", "HO", "FOUNDER"] as const).map((c) => (
-            <Chip key={c} href={`/expenses?cc=${c}${m ? `&m=${m}` : ""}`} active={(sp.cc ?? "ALL") === c} subtle>
-              {c === "ALL" ? "All teams" : CC_LABEL[c]}
-            </Chip>
-          ))}
-        </div>
-      )}
+      <ExpenseFilters
+        months={months.map((mo) => ({ key: mo.key, label: mo.label }))}
+        month={m}
+        costCenter={founder ? (sp.cc ?? "ALL") : null}
+        selected={picked}
+        categories={cats.map((c) => ({ id: c.id, name: c.name, group: c.group, icon: c.icon, color: c.color }))}
+      />
 
       <ExpenseTable
         showTeam={founder}
         categories={cats.map((c) => ({
-          id: c.id, name: c.name, group: c.group, costCenters: c.costCenters,
+          id: c.id, name: c.name, group: c.group, costCenters: c.costCenters, icon: c.icon, color: c.color,
           requiresBill: c.requiresBill, billThreshold: c.billThreshold ? Number(c.billThreshold) : 0,
         }))}
         rows={rows.map((r) => ({
@@ -74,6 +68,8 @@ export default async function ExpensesPage({
           date: r.date.toISOString().slice(0, 10),
           categoryId: r.category.id,
           categoryName: r.category.name,
+          categoryIcon: r.category.icon,
+          categoryColor: r.category.color,
           description: r.description ?? "",
           amount: Number(r.amount),
           paidTo: r.paidTo ?? "",
@@ -83,19 +79,5 @@ export default async function ExpensesPage({
         }))}
       />
     </div>
-  );
-}
-
-function Chip({
-  href, active, subtle, children,
-}: { href: string; active: boolean; subtle?: boolean; children: React.ReactNode }) {
-  const on = subtle ? "border-brand bg-brand-soft text-brand" : "border-brand bg-brand text-white";
-  return (
-    <Link href={href}
-      className={`rounded-full border px-3 py-1.5 text-xs transition ${
-        active ? on : "border-line bg-surface text-muted hover:bg-canvas"
-      }`}>
-      {children}
-    </Link>
   );
 }

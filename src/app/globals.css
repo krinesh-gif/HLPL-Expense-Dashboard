@@ -1,34 +1,192 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #14181f;
-  --color-muted: #626b7a;
-  --color-line: #e3e7ee;
+  --color-ink: #10131a;
+  --color-body: #4a5261;
+  --color-muted: #79818f;
+  --color-line: #e6e9ef;
+  --color-line-strong: #d3d8e2;
   --color-surface: #ffffff;
-  --color-canvas: #f5f7fa;
+  --color-raised: #fbfcfe;
+  --color-canvas: #f4f6fa;
+
   --color-brand: #14603f;
-  --color-brand-soft: #e8f2ed;
+  --color-brand-ink: #0e4a30;
+  --color-brand-soft: #e6f2ec;
+  --color-accent: #2a78d6;
+  --color-accent-soft: #e8f0fb;
+
+  --color-good: #1baf7a;
+  --color-good-soft: #e3f5ee;
   --color-warn: #a8620a;
-  --color-warn-soft: #fdf3e4;
+  --color-warn-soft: #fdf2e4;
   --color-danger: #b3261e;
   --color-danger-soft: #fdecea;
+
+  --radius-card: 14px;
 }
 
-html { color-scheme: light; }
-body { background: var(--color-canvas); color: var(--color-ink); }
+:root {
+  color-scheme: light;
+  --shadow-card: 0 1px 2px rgb(16 19 26 / 0.04), 0 1px 3px rgb(16 19 26 / 0.03);
+  --shadow-pop: 0 4px 12px rgb(16 19 26 / 0.08), 0 2px 4px rgb(16 19 26 / 0.04);
+}
+
+/* Dark mode follows the OS unless the viewer has stamped a choice. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+  :root:not([data-theme="light"]) body { --dark: 1; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+@layer base {
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --color-ink: #f2f4f8;
+      --color-body: #b9c0cc;
+      --color-muted: #8c94a3;
+      --color-line: #262b34;
+      --color-line-strong: #333944;
+      --color-surface: #171b22;
+      --color-raised: #1c212a;
+      --color-canvas: #0f1217;
+      --color-brand: #3fbb87;
+      --color-brand-ink: #7fd6ae;
+      --color-brand-soft: #12291f;
+      --color-accent: #3987e5;
+      --color-accent-soft: #16283d;
+      --color-good: #3fbb87;
+      --color-good-soft: #12291f;
+      --color-warn: #e0a458;
+      --color-warn-soft: #33260a;
+      --color-danger: #ef8079;
+      --color-danger-soft: #361616;
+    }
+  }
+  :root[data-theme="dark"] {
+    --color-ink: #f2f4f8;
+    --color-body: #b9c0cc;
+    --color-muted: #8c94a3;
+    --color-line: #262b34;
+    --color-line-strong: #333944;
+    --color-surface: #171b22;
+    --color-raised: #1c212a;
+    --color-canvas: #0f1217;
+    --color-brand: #3fbb87;
+    --color-brand-ink: #7fd6ae;
+    --color-brand-soft: #12291f;
+    --color-accent: #3987e5;
+    --color-accent-soft: #16283d;
+    --color-good: #3fbb87;
+    --color-good-soft: #12291f;
+    --color-warn: #e0a458;
+    --color-warn-soft: #33260a;
+    --color-danger: #ef8079;
+    --color-danger-soft: #361616;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::selection { background: var(--color-brand-soft); }
+}
 
 @layer components {
-  .card { @apply bg-surface border border-line rounded-xl; }
+  .card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
   .label { @apply block text-xs font-medium text-muted mb-1.5; }
   .input {
-    @apply w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-[15px]
-           outline-none focus:border-brand focus:ring-2 focus:ring-brand/15;
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-[15px] text-ink
+           outline-none transition placeholder:text-muted/70
+           focus:border-brand focus:ring-4 focus:ring-brand/10;
   }
-  .btn, .btn-primary, .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
-           text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed;
+  .btn, .btn-primary, .btn-ghost, .btn-soft {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm
+           font-medium transition active:scale-[0.985]
+           disabled:pointer-events-none disabled:opacity-50;
   }
-  .btn-primary { @apply bg-brand text-white hover:bg-brand/90; }
-  .btn-ghost { @apply border border-line bg-surface hover:bg-canvas; }
+  .btn-primary { @apply bg-brand text-white hover:bg-brand-ink; }
+  .btn-ghost { @apply border border-line bg-surface text-ink hover:border-line-strong hover:bg-canvas; }
+  .btn-soft { @apply bg-brand-soft text-brand hover:brightness-95; }
+  .icon-btn {
+    @apply inline-grid size-8 place-items-center rounded-lg border border-transparent
+           text-muted transition hover:border-line hover:bg-canvas hover:text-ink
+           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+  }
   .num { @apply tabular-nums; }
+  .chip {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border
+           px-2.5 py-1 text-xs font-medium transition;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@layer components {
+  /* Category hues. Each key sets the three chip roles; the dark steps are chosen
+     for the dark surface rather than being an automatic flip of the light ones. */
+  .cat-blue { --chip-soft: #e8f0fb; --chip-ink: #1a4f8f; --chip-solid: #2a78d6; }
+  .cat-sky { --chip-soft: #e2f2f6; --chip-ink: #0a5a70; --chip-solid: #0e87a8; }
+  .cat-teal { --chip-soft: #e3f5ee; --chip-ink: #0f6f4d; --chip-solid: #1baf7a; }
+  .cat-green { --chip-soft: #e9f3e8; --chip-ink: #2a6b2c; --chip-solid: #3f9142; }
+  .cat-lime { --chip-soft: #eff4e0; --chip-ink: #4c660c; --chip-solid: #6f9412; }
+  .cat-amber { --chip-soft: #fdf2dc; --chip-ink: #8a5c00; --chip-solid: #eda100; }
+  .cat-orange { --chip-soft: #fdeae2; --chip-ink: #9c3d16; --chip-solid: #eb6834; }
+  .cat-red { --chip-soft: #fdeaea; --chip-ink: #9c2726; --chip-solid: #e34948; }
+  .cat-pink { --chip-soft: #fce9f1; --chip-ink: #932f5c; --chip-solid: #d8548b; }
+  .cat-violet { --chip-soft: #f0e9fb; --chip-ink: #523383; --chip-solid: #7b52c4; }
+  .cat-indigo { --chip-soft: #e9e7f7; --chip-ink: #332777; --chip-solid: #4a3aa7; }
+  .cat-slate { --chip-soft: #eceef1; --chip-ink: #3d4753; --chip-solid: #5f6b7a; }
+
+  :root {
+    --series-wh: #2a78d6;
+    --series-ho: #eb6834;
+    --series-founder: #1baf7a;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    .cat-blue { --chip-soft: #16283d; --chip-ink: #9cc4f0; --chip-solid: #3987e5; }
+    .cat-sky { --chip-soft: #0e2b33; --chip-ink: #8fd2e4; --chip-solid: #2ba0c0; }
+    .cat-teal { --chip-soft: #0d2b22; --chip-ink: #84dbba; --chip-solid: #199e70; }
+    .cat-green { --chip-soft: #162a17; --chip-ink: #a5d6a6; --chip-solid: #57a95a; }
+    .cat-lime { --chip-soft: #232b0e; --chip-ink: #c3da84; --chip-solid: #89ad2c; }
+    .cat-amber { --chip-soft: #33260a; --chip-ink: #f0c766; --chip-solid: #c98500; }
+    .cat-orange { --chip-soft: #361c11; --chip-ink: #f3a483; --chip-solid: #d95926; }
+    .cat-red { --chip-soft: #361616; --chip-ink: #f0a2a2; --chip-solid: #e66767; }
+    .cat-pink { --chip-soft: #33141f; --chip-ink: #efa4c2; --chip-solid: #d55181; }
+    .cat-violet { --chip-soft: #221a38; --chip-ink: #c3b4f2; --chip-solid: #9085e9; }
+    .cat-indigo { --chip-soft: #1b1836; --chip-ink: #b3aaee; --chip-solid: #7a6ee0; }
+    .cat-slate { --chip-soft: #20252b; --chip-ink: #bcc4cd; --chip-solid: #8b97a6; }
+    --series-wh: #3987e5;
+    --series-ho: #d95926;
+    --series-founder: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+    .cat-blue { --chip-soft: #16283d; --chip-ink: #9cc4f0; --chip-solid: #3987e5; }
+    .cat-sky { --chip-soft: #0e2b33; --chip-ink: #8fd2e4; --chip-solid: #2ba0c0; }
+    .cat-teal { --chip-soft: #0d2b22; --chip-ink: #84dbba; --chip-solid: #199e70; }
+    .cat-green { --chip-soft: #162a17; --chip-ink: #a5d6a6; --chip-solid: #57a95a; }
+    .cat-lime { --chip-soft: #232b0e; --chip-ink: #c3da84; --chip-solid: #89ad2c; }
+    .cat-amber { --chip-soft: #33260a; --chip-ink: #f0c766; --chip-solid: #c98500; }
+    .cat-orange { --chip-soft: #361c11; --chip-ink: #f3a483; --chip-solid: #d95926; }
+    .cat-red { --chip-soft: #361616; --chip-ink: #f0a2a2; --chip-solid: #e66767; }
+    .cat-pink { --chip-soft: #33141f; --chip-ink: #efa4c2; --chip-solid: #d55181; }
+    .cat-violet { --chip-soft: #221a38; --chip-ink: #c3b4f2; --chip-solid: #9085e9; }
+    .cat-indigo { --chip-soft: #1b1836; --chip-ink: #b3aaee; --chip-solid: #7a6ee0; }
+    .cat-slate { --chip-soft: #20252b; --chip-ink: #bcc4cd; --chip-solid: #8b97a6; }
+  --series-wh: #3987e5;
+  --series-ho: #d95926;
+  --series-founder: #199e70;
 }

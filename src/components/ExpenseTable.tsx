@@ -1,16 +1,19 @@
 "use client";
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { updateExpense, deleteExpense, setExpenseCategory, type EntryState } from "@/app/actions/expense";
+import { isColorKey } from "@/lib/palette";
+import { PencilIcon, CloseIcon, TrashIcon } from "./Icons";
 
 export type Row = {
   id: string; date: string; categoryId: string; categoryName: string;
+  categoryIcon: string; categoryColor: string;
   description: string; amount: number; paidTo: string;
   paymentMode: string; billNo: string; costCenter: string;
 };
 
 export type Cat = {
   id: string; name: string; group: string; costCenters: string[];
-  requiresBill: boolean; billThreshold: number;
+  requiresBill: boolean; billThreshold: number; icon: string; color: string;
 };
 
 const CC_LABEL: Record<string, string> = { WH: "Warehouse", HO: "Head Office", FOUNDER: "Founder" };
@@ -35,9 +38,9 @@ export default function ExpenseTable({
   return (
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm md:min-w-[720px]">
+        <table className="w-full text-sm md:min-w-[760px]">
           <thead>
-            <tr className="border-b border-line bg-canvas text-left text-xs text-muted">
+            <tr className="border-b border-line bg-raised text-left text-[11px] uppercase tracking-wider text-muted">
               <Th className="w-20 md:w-24">Date</Th>
               <Th className="md:w-48">Category</Th>
               <Th className="hidden md:table-cell">Description</Th>
@@ -65,7 +68,7 @@ export default function ExpenseTable({
 }
 
 function Th({ className = "", children }: { className?: string; children?: React.ReactNode }) {
-  return <th className={`px-3 py-2.5 font-medium ${className}`}>{children}</th>;
+  return <th className={`px-3 py-3 font-semibold ${className}`}>{children}</th>;
 }
 
 function CategoryPicker({ row, categories }: { row: Row; categories: Cat[] }) {
@@ -78,35 +81,45 @@ function CategoryPicker({ row, categories }: { row: Row; categories: Cat[] }) {
 
   const allowed = categories.filter((c) => c.costCenters.includes(row.costCenter));
   const groups = [...new Map(allowed.map((c) => [c.group, allowed.filter((x) => x.group === c.group)]))];
-  const unset = row.categoryName.startsWith("Unclassified");
+  const current = allowed.find((c) => c.id === value);
+  const cls = isColorKey(current?.color ?? row.categoryColor)
+    ? `cat-${current?.color ?? row.categoryColor}` : "cat-slate";
+  const unset = (current?.name ?? row.categoryName).startsWith("Unclassified");
 
   return (
     <>
-      <select
-        aria-label={`Category for ${row.description || row.categoryName}`}
-        value={value}
-        disabled={pending}
-        onChange={(e) => {
-          const next = e.target.value;
-          const previous = value;
-          setValue(next);
-          setError(null);
-          start(async () => {
-            const r = await setExpenseCategory(row.id, next);
-            if (r.error) { setValue(previous); setError(r.error); }
-          });
-        }}
-        className={`-ml-1 w-full max-w-[15rem] cursor-pointer truncate rounded border border-transparent
-                    bg-transparent px-1 py-0.5 outline-none hover:border-line hover:bg-surface
-                    focus:border-brand focus:bg-surface focus:ring-2 focus:ring-brand/15
-                    disabled:opacity-50 ${unset ? "text-warn" : ""}`}
-      >
-        {groups.map(([group, items]) => (
-          <optgroup key={group} label={group}>
-            {items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </optgroup>
-        ))}
-      </select>
+      {/* the chip is the visible control; the select sits on top of it, invisible,
+          so the native picker opens on tap and works the same on a phone */}
+      <span className={`relative inline-flex max-w-full ${pending ? "opacity-50" : ""}`}>
+        <span className={`chip border-transparent ${cls}`}
+              style={{ background: "var(--chip-soft)", color: "var(--chip-ink)" }}>
+          <span aria-hidden className="text-[13px] leading-none">{current?.icon ?? row.categoryIcon}</span>
+          <span className="truncate">{current?.name ?? row.categoryName}</span>
+          {unset && <span aria-hidden className="text-[10px] opacity-70">▾</span>}
+        </span>
+        <select
+          aria-label={`Category for ${row.description || row.categoryName}`}
+          value={value}
+          disabled={pending}
+          onChange={(e) => {
+            const next = e.target.value;
+            const previous = value;
+            setValue(next);
+            setError(null);
+            start(async () => {
+              const r = await setExpenseCategory(row.id, next);
+              if (r.error) { setValue(previous); setError(r.error); }
+            });
+          }}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        >
+          {groups.map(([group, items]) => (
+            <optgroup key={group} label={group}>
+              {items.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </span>
       {error && <span className="block text-xs text-danger">{error}</span>}
     </>
   );
@@ -121,7 +134,7 @@ function ExpenseRow({
   const span = 6 + (showTeam ? 1 : 0) + 1;
   return (
     <>
-      <tr className={`border-b border-line align-top ${open ? "bg-brand-soft/40" : "hover:bg-canvas"}`}>
+      <tr className={`border-b border-line align-top transition-colors ${open ? "bg-brand-soft/50" : "hover:bg-raised"}`}>
         <td className="num px-2 py-2.5 text-muted md:whitespace-nowrap md:px-3">{day(row.date)}</td>
         <td className="px-2 py-2.5 md:px-3">
           <CategoryPicker row={row} categories={categories} />
@@ -142,8 +155,10 @@ function ExpenseRow({
         <td className="num whitespace-nowrap px-2 py-2.5 text-right font-semibold md:px-3">{inr(row.amount)}</td>
         <td className="px-2 py-2.5 text-right md:px-3">
           <button onClick={onOpen} aria-expanded={open}
-                  className="text-xs font-medium text-brand hover:underline">
-            {open ? "Close" : "Edit"}
+                  aria-label={open ? "Close editor" : `Edit ${row.categoryName} entry`}
+                  title={open ? "Close" : "Edit entry"}
+                  className="icon-btn">
+            {open ? <CloseIcon className="size-4" /> : <PencilIcon className="size-4" />}
           </button>
         </td>
       </tr>
@@ -228,8 +243,8 @@ function EditForm({ row, categories, onClose }: { row: Row; categories: Cat[]; o
           <span className="flex-1" />
           {!confirming && (
             <button type="button" onClick={() => setConfirming(true)}
-                    className="text-xs text-muted underline hover:text-danger">
-              Remove entry
+                    className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-danger">
+              <TrashIcon className="size-3.5" /> Remove entry
             </button>
           )}
         </div>

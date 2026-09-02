@@ -35,17 +35,31 @@ async function main() {
   console.log("\n=== row counts per role (must equal that role's own rows) ===");
   for (const [who, c, cc] of [["wh", W, "WH"], ["ho", H, "HO"], ["founder", F, null]] as const) {
     const html = await (await get("/expenses", c)).text();
-    const onPage = (html.match(/aria-expanded="false"/g) ?? []).length;
+    const onPage = (html.match(/aria-label="Edit [^"]*"/g) ?? []).length;
     const inDb = await prisma.expense.count({ where: { voidedAt: null, ...(cc ? { costCenter: cc as "WH" } : {}) } });
     console.log(`${who.padEnd(8)} on page: ${onPage}  in db: ${inDb}  match: ${onPage === inDb}`);
   }
 
   console.log("\n=== data leakage: does WH see HO/founder rows? ===");
   // Pick distinctive strings that exist only in one cost centre.
-  const hoRow = await prisma.expense.findFirst({ where: { costCenter: "HO", description: { not: null } }, orderBy: { amount: "desc" } });
-  const fRow  = await prisma.expense.findFirst({ where: { costCenter: "FOUNDER", description: { not: null } }, orderBy: { amount: "desc" } });
-  const whRow = await prisma.expense.findFirst({ where: { costCenter: "WH", description: { not: null } }, orderBy: { amount: "desc" } });
+  const uniqueFor = async (cc: "WH" | "HO" | "FOUNDER") => {
+    const mine = await prisma.expense.findMany({
+      where: { costCenter: cc, voidedAt: null, description: { not: null } },
+      select: { id: true, description: true, costCenter: true, date: true }, take: 400,
+    });
+    const others = (await prisma.expense.findMany({
+      where: { costCenter: { not: cc }, voidedAt: null, description: { not: null } },
+      select: { description: true },
+    })).map((o) => o.description!.toLowerCase()).join(" | ");
+    return mine.find((r) => r.description!.length > 14 && !others.includes(r.description!.toLowerCase())) ?? null;
+  };
+  const hoRow = await uniqueFor("HO");
+  const fRow = await uniqueFor("FOUNDER");
+  const whRow = await uniqueFor("WH");
   console.log("HO marker:", hoRow?.description, "| FOUNDER marker:", fRow?.description, "| WH marker:", whRow?.description);
+
+  // the page HTML escapes &, < and >, so compare against the escaped form
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   const monthOf = (d?: Date) => d ? `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}` : "";
   for (const [who, c, own, foreign] of [
@@ -54,18 +68,18 @@ async function main() {
   ] as const) {
     const r = await get(`/expenses?m=${monthOf(own?.date)}`, c);
     const body = await r.text();
-    const seesOwn = own?.description ? body.includes(own.description.slice(0, 20)) : false;
+    const seesOwn = own?.description ? body.includes(esc(own.description.slice(0, 20))) : false;
     console.log(`${who}: sees own row = ${seesOwn}`);
     for (const f of foreign) {
       if (!f?.description) continue;
       const r2 = await get(`/expenses?m=${monthOf(f.date)}`, c);
       const b2 = await r2.text();
-      console.log(`  ${who} sees ${f.costCenter} row "${f.description.slice(0,26)}" = ${b2.includes(f.description.slice(0, 20))}`);
+      console.log(`  ${who} sees ${f.costCenter} row "${f.description.slice(0,26)}" = ${b2.includes(esc(f.description.slice(0, 20)))}`);
     }
     // try forcing the cost-centre filter that only the founder gets
     const r3 = await get(`/expenses?m=${monthOf(fRow?.date)}&cc=FOUNDER`, c);
     const b3 = await r3.text();
-    console.log(`  ${who} forcing ?cc=FOUNDER sees founder row = ${fRow?.description ? b3.includes(fRow.description.slice(0,20)) : "n/a"}`);
+    console.log(`  ${who} forcing ?cc=FOUNDER sees founder row = ${fRow?.description ? b3.includes(esc(fRow.description.slice(0,20))) : "n/a"}`);
   }
 }
 main().finally(() => prisma.$disconnect());

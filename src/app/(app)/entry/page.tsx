@@ -16,6 +16,8 @@ export default async function EntryPage() {
   const options = cats.map((c) => ({
     id: c.id,
     name: c.name,
+    icon: c.icon,
+    color: c.color,
     group: c.group,
     uses: c.uses,
     budget: c.monthlyBudget ? Number(c.monthlyBudget) : null,

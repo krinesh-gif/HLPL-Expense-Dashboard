@@ -16,6 +16,7 @@ export default async function CategoriesPage() {
 
   const rows = cats.map((c) => ({
     id: c.id, code: c.code, name: c.name, group: c.group, tallyLedger: c.tallyLedger,
+    icon: c.icon, color: c.color,
     costCenters: c.costCenters, monthlyBudget: c.monthlyBudget ? Number(c.monthlyBudget) : 0,
     requiresBill: c.requiresBill, billThreshold: c.billThreshold ? Number(c.billThreshold) : 0,
     active: c.active, entries: c._count.expenses, spent: usage.get(c.id) ?? 0,
