@@ -1,6 +1,6 @@
 "use client";
-import { useActionState, useState } from "react";
-import { saveCategory, type CatState } from "@/app/actions/category";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { saveCategory, deleteCategory, type CatState } from "@/app/actions/category";
 
 export type CatRow = {
   id: string; code: string; name: string; group: string; tallyLedger: string;
@@ -13,10 +13,20 @@ const CCS = [
   { v: "HO", label: "Head Office" },
   { v: "FOUNDER", label: "Founder" },
 ];
+/** The edit and remove panels render above the list, so bring them into view. */
+function usePanelFocus() {
+  const ref = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+  return ref;
+}
+
 const inr = (v: number) => "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(v));
 
 export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
   const [editing, setEditing] = useState<CatRow | "new" | null>(null);
+  const [removing, setRemoving] = useState<CatRow | null>(null);
   const groups = [...new Map(rows.map((r) => [r.group, rows.filter((x) => x.group === r.group)])).entries()];
 
   return (
@@ -25,6 +35,9 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
 
       {editing && (
         <Editor row={editing === "new" ? null : editing} onDone={() => setEditing(null)} />
+      )}
+      {removing && (
+        <RemoveForm row={removing} all={rows} onDone={() => setRemoving(null)} />
       )}
 
       <div className="space-y-5">
@@ -65,7 +78,12 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
                     )}
                   </div>
 
-                  <button onClick={() => setEditing(c)} className="btn-ghost px-3 py-1.5 text-xs">Edit</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setEditing(c); setRemoving(null); }}
+                            className="btn-ghost px-3 py-1.5 text-xs">Edit</button>
+                    <button onClick={() => { setRemoving(c); setEditing(null); }}
+                            className="btn-ghost px-3 py-1.5 text-xs">Remove</button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -79,10 +97,11 @@ export default function CategoryAdmin({ rows }: { rows: CatRow[] }) {
 function Editor({ row, onDone }: { row: CatRow | null; onDone: () => void }) {
   const [state, action, pending] = useActionState<CatState, FormData>(saveCategory, {});
   const [requiresBill, setRequiresBill] = useState(row?.requiresBill ?? false);
+  const ref = usePanelFocus();
   if (state.ok) queueMicrotask(onDone);
 
   return (
-    <form action={action} className="card space-y-4 p-5">
+    <form ref={ref} action={action} className="card space-y-4 p-5">
       {row && <input type="hidden" name="id" value={row.id} />}
       <h2 className="text-sm font-semibold">{row ? `Edit ${row.name}` : "New category"}</h2>
 
@@ -114,7 +133,7 @@ function Editor({ row, onDone }: { row: CatRow | null; onDone: () => void }) {
         <div>
           <label className="label" htmlFor="c-thresh">Bill required above (₹)</label>
           <input id="c-thresh" name="billThreshold" type="number" min={0} defaultValue={row?.billThreshold ?? 0}
-                 disabled={!requiresBill} className="input num disabled:bg-canvas disabled:text-muted" />
+                 readOnly={!requiresBill} className="input num read-only:bg-canvas read-only:text-muted" />
         </div>
       </div>
 
@@ -150,6 +169,55 @@ function Editor({ row, onDone }: { row: CatRow | null; onDone: () => void }) {
 
       <div className="flex gap-2">
         <button type="submit" disabled={pending} className="btn-primary">{pending ? "Saving…" : "Save"}</button>
+        <button type="button" onClick={onDone} className="btn-ghost">Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function RemoveForm({ row, all, onDone }: { row: CatRow; all: CatRow[]; onDone: () => void }) {
+  const [state, action, pending] = useActionState<CatState, FormData>(deleteCategory, {});
+  const ref = usePanelFocus();
+  if (state.ok) queueMicrotask(onDone);
+
+  const targets = all.filter((c) => c.id !== row.id && c.active);
+
+  return (
+    <form ref={ref} action={action} className="card space-y-4 border-danger/30 bg-danger-soft p-5">
+      <input type="hidden" name="id" value={row.id} />
+      <h2 className="text-sm font-semibold text-danger">Remove “{row.name}”</h2>
+
+      {row.entries > 0 ? (
+        <>
+          <p className="text-sm">
+            {row.entries} entries are booked to this head. Choose where they should go —
+            they keep their amounts and dates, only the category changes.
+          </p>
+          <div className="max-w-sm">
+            <label className="label" htmlFor="moveTo">Move those entries to</label>
+            <select id="moveTo" name="moveToId" required defaultValue="" className="input">
+              <option value="" disabled>Choose a category…</option>
+              {targets.map((c) => (
+                <option key={c.id} value={c.id}>{c.group} — {c.name}</option>
+              ))}
+            </select>
+          </div>
+        </>
+      ) : (
+        <p className="text-sm">
+          Nothing is booked to this head, so it can be removed outright.
+        </p>
+      )}
+
+      {state.error && (
+        <p role="alert" className="rounded-lg bg-surface px-3 py-2 text-sm text-danger">{state.error}</p>
+      )}
+
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending}
+                className="btn rounded-lg bg-danger px-4 py-2.5 text-sm font-medium text-white hover:opacity-90">
+          {pending ? "Removing…" : row.entries > 0 ? `Move ${row.entries} entries and remove` : "Remove"}
+        </button>
         <button type="button" onClick={onDone} className="btn-ghost">Cancel</button>
       </div>
     </form>

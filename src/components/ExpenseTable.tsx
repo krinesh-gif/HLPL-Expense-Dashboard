@@ -1,6 +1,6 @@
 "use client";
-import { useActionState, useEffect, useState } from "react";
-import { updateExpense, deleteExpense, type EntryState } from "@/app/actions/expense";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { updateExpense, deleteExpense, setExpenseCategory, type EntryState } from "@/app/actions/expense";
 
 export type Row = {
   id: string; date: string; categoryId: string; categoryName: string;
@@ -68,6 +68,50 @@ function Th({ className = "", children }: { className?: string; children?: React
   return <th className={`px-3 py-2.5 font-medium ${className}`}>{children}</th>;
 }
 
+function CategoryPicker({ row, categories }: { row: Row; categories: Cat[] }) {
+  const [pending, start] = useTransition();
+  const [value, setValue] = useState(row.categoryId);
+  const [error, setError] = useState<string | null>(null);
+
+  // keep in step when the server sends fresh rows after a change elsewhere
+  useEffect(() => setValue(row.categoryId), [row.categoryId]);
+
+  const allowed = categories.filter((c) => c.costCenters.includes(row.costCenter));
+  const groups = [...new Map(allowed.map((c) => [c.group, allowed.filter((x) => x.group === c.group)]))];
+  const unset = row.categoryName.startsWith("Unclassified");
+
+  return (
+    <>
+      <select
+        aria-label={`Category for ${row.description || row.categoryName}`}
+        value={value}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value;
+          const previous = value;
+          setValue(next);
+          setError(null);
+          start(async () => {
+            const r = await setExpenseCategory(row.id, next);
+            if (r.error) { setValue(previous); setError(r.error); }
+          });
+        }}
+        className={`-ml-1 w-full max-w-[15rem] cursor-pointer truncate rounded border border-transparent
+                    bg-transparent px-1 py-0.5 outline-none hover:border-line hover:bg-surface
+                    focus:border-brand focus:bg-surface focus:ring-2 focus:ring-brand/15
+                    disabled:opacity-50 ${unset ? "text-warn" : ""}`}
+      >
+        {groups.map(([group, items]) => (
+          <optgroup key={group} label={group}>
+            {items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      {error && <span className="block text-xs text-danger">{error}</span>}
+    </>
+  );
+}
+
 function ExpenseRow({
   row, categories, showTeam, open, onOpen, onClose,
 }: {
@@ -80,7 +124,7 @@ function ExpenseRow({
       <tr className={`border-b border-line align-top ${open ? "bg-brand-soft/40" : "hover:bg-canvas"}`}>
         <td className="num px-2 py-2.5 text-muted md:whitespace-nowrap md:px-3">{day(row.date)}</td>
         <td className="px-2 py-2.5 md:px-3">
-          {row.categoryName}
+          <CategoryPicker row={row} categories={categories} />
           {/* the columns hidden on small screens, folded in so nothing is lost */}
           <span className="mt-0.5 block text-xs text-muted md:hidden">
             {[row.description, row.paidTo, showTeam ? CC_LABEL[row.costCenter] : null]

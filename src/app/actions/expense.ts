@@ -116,3 +116,26 @@ export async function deleteExpense(_prev: EntryState, form: FormData): Promise<
   revalidatePath("/dashboard");
   return { ok: "Entry removed." };
 }
+
+/**
+ * Re-tag a single entry straight from the expenses table. Kept separate from the
+ * full edit so clearing a backlog of mis-tagged rows is one click each.
+ */
+export async function setExpenseCategory(id: string, categoryId: string): Promise<EntryState> {
+  const s = await requireUser();
+
+  const existing = await prisma.expense.findFirst({ where: { id, ...expenseScope(s) } });
+  if (!existing) return { error: "That entry is not yours to change." };
+
+  const cat = await prisma.category.findUnique({ where: { id: categoryId } });
+  if (!cat || !cat.active) return { error: "That category is not available." };
+  if (!cat.costCenters.includes(existing.costCenter)) {
+    return { error: `“${cat.name}” is not open to ${existing.costCenter}.` };
+  }
+
+  await prisma.expense.update({ where: { id }, data: { categoryId } });
+
+  revalidatePath("/expenses");
+  revalidatePath("/dashboard");
+  return { ok: cat.name };
+}
