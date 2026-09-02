@@ -12,7 +12,8 @@
     "postinstall": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "set-password": "tsx scripts/set-password.ts",
-    "add-user": "tsx scripts/add-user.ts"
+    "add-user": "tsx scripts/add-user.ts",
+    "vercel-build": "prisma migrate deploy && next build"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

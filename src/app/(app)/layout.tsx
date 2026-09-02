@@ -14,6 +14,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/expenses", label: "All expenses" },
         { href: "/cash", label: "Cash & float" },
         { href: "/categories", label: "Categories" },
+        { href: "/users", label: "People" },
+        { href: "/import", label: "Import" },
       ]
     : [
         { href: "/entry", label: "Add expense" },

@@ -26,7 +26,7 @@ async function main() {
 
   console.log("=== route access ===");
   for (const [who, c] of [["founder", F], ["wh", W], ["ho", H]] as const) {
-    for (const p of ["/dashboard", "/cash", "/categories", "/entry", "/expenses", "/reconcile", "/api/export"]) {
+    for (const p of ["/dashboard", "/cash", "/categories", "/entry", "/expenses", "/reconcile", "/api/export", "/users", "/import", "/setup"]) {
       const r = await check(who, c, p);
       console.log(`${who.padEnd(8)} ${p.padEnd(12)} ${r.status} ${r.loc}`);
     }

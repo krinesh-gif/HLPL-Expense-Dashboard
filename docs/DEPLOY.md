@@ -1,232 +1,175 @@
-# Deploying to Neon + Vercel
+# Setting up and running the dashboard
 
-Around 30 minutes end to end. Both services are free at your volume — roughly 800
-expense rows a year is nothing for either.
-
-You need: a GitHub account (you have one), an email address, and this repo.
+You never need a terminal. Everything is either a click in a website, or a message to
+Claude.
 
 ---
 
-## 1. Create the database on Neon
-
-1. Go to **https://neon.tech** and sign up with GitHub.
-2. **Create project.** Name it `hlpl-expense`. For region choose
-   **AWS ap-southeast-1 (Singapore)** — it is the closest to India and keeps the
-   dashboard fast for your team in Surat.
-3. Leave the database name as `neondb`, or rename it to `hlpl`. Either is fine.
-4. On the project dashboard, click **Connect** (or **Connection string**).
-
-You now need to copy **two** versions of the connection string.
-
-**a) The pooled string** — this is what the app uses.
-With *Connection pooling* switched **on**, copy the string. The host contains
-`-pooler`, like:
+## How changes reach the live dashboard
 
 ```
-postgresql://neondb_owner:npg_xxxx@ep-cool-brook-12345678-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+  you describe a change to Claude
+        │
+        ▼
+  Claude edits the code and pushes to GitHub
+        │
+        ▼
+  Vercel notices the push and rebuilds automatically   (~2 minutes)
+        │
+        ▼
+  the live dashboard is updated - your team just refreshes
 ```
 
-Append two parameters to the end so Prisma behaves correctly behind the pooler:
+Database changes are applied by the deploy itself (`prisma migrate deploy` runs before
+every build), so a change that needs a new field ships in one step with no separate
+action from you.
 
-```
-&pgbouncer=true&connection_limit=1
-```
-
-**b) The direct string** — this is what database migrations use.
-Switch *Connection pooling* **off** and copy again. Same string, but the host has
-**no** `-pooler`:
-
-```
-postgresql://neondb_owner:npg_xxxx@ep-cool-brook-12345678.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
-```
-
-> **Why two?** The pooler (PgBouncer) multiplexes many short serverless requests onto
-> a few real connections — without it, Vercel would exhaust Neon's connection limit.
-> But migrations need advisory locks that the pooler cannot pass through, so they take
-> the direct route. The app uses `DATABASE_URL`, migrations use `DIRECT_URL`.
-
-Keep both strings somewhere safe for the next steps. They contain the database password.
+**What Claude cannot do.** Your organisation's network policy blocks Claude sessions
+from reaching Neon and Vercel directly. So Claude can change the *app*, but cannot
+reach into the *database* to load data or reset a password. That is why those jobs are
+built into the dashboard as screens you use yourself — see **People** and **Import**
+below.
 
 ---
 
-## 2. Create the schema and load your data
+## One-time setup
 
-Run this **from your Mac**, not from Vercel. Vercel builds are read-only and short-lived;
-migrations and the one-time data import belong on your machine.
+### 1. The database, inside your existing Neon project
 
-```bash
-git clone https://github.com/krinesh-gif/HLPL-Expense-Dashboard.git
-cd HLPL-Expense-Dashboard
-git checkout claude/expense-dashboard-roles-zi14wl
-npm install
-```
+You already have the `neon-green-flask` project from the Sales P&L and Supply dashboards.
+Reuse the project, but **create a separate database inside it** — do not point this app
+at the database those dashboards use.
 
-Create a `.env` file in the project root:
+1. Open **https://console.neon.tech**, choose **neon-green-flask**.
+2. Go to **Databases → New Database**. Name it `hlpl_expense`. Create it.
+3. Go to **Connect**, and pick `hlpl_expense` in the database dropdown.
+4. Copy the string **with pooling on** — the host contains `-pooler`. Add
+   `&pgbouncer=true&connection_limit=1` to the end. This is `DATABASE_URL`.
+5. Toggle pooling **off**, copy again — same string, no `-pooler`. This is `DIRECT_URL`.
 
-```bash
-DATABASE_URL="<pooled string from step 1a>"
-DIRECT_URL="<direct string from step 1b>"
-AUTH_SECRET="<run: openssl rand -base64 32>"
-SEED_PASSWORD="<pick a strong temporary password>"
-```
+> **Why a separate database.** Prisma tracks which migrations it has applied in a table
+> called `_prisma_migrations`. If your Sales P&L dashboard also uses Prisma and shares a
+> database with this one, the two apps would read each other's migration history and
+> could try to undo each other's tables. A separate database inside the same project
+> keeps them fully isolated while still using the one Neon project and its free tier.
 
-Generate the secret with:
+> **Why two strings.** The pooled one lets many short-lived Vercel functions share a few
+> real connections. Migrations need locks the pooler cannot pass through, so they use the
+> direct one.
 
-```bash
-openssl rand -base64 32
-```
+### 2. Deploy on Vercel
 
-Then build the schema and load the category master and users:
-
-```bash
-npx prisma migrate deploy
-npm run seed
-```
-
-That creates 25 expense categories and three logins:
-`krinesh@araviorganic.com`, `wh@araviorganic.com`, `ho@araviorganic.com` — all with the
-password you set in `SEED_PASSWORD`.
-
-### Load your historical data
-
-Copy the three workbooks into `data/` with these exact names:
-
-```
-data/founder.xlsx   (HLPL_Cash_Expense_Advanced_FY2627)
-data/wh.xlsx        (WH-Expense Sheet FY2627)
-data/ho.xlsx        (HO-Expense Sheet FY2627)
-```
-
-Then:
-
-```bash
-npm run import
-```
-
-It loads 692 expenses and 92 cash transactions. It is safe to re-run — it clears
-previously imported rows and reloads them, and never touches entries made in the app.
-
-Confirm it worked:
-
-```bash
-npx prisma studio
-```
-
-That opens a browser table view of the database.
-
----
-
-## 3. Deploy the app on Vercel
-
-1. Go to **https://vercel.com** and sign up with the same GitHub account.
-2. **Add New → Project**, then import `HLPL-Expense-Dashboard`.
-3. Vercel detects Next.js on its own — leave the build settings alone.
-4. Under **Environment Variables**, add three, for **all** environments
-   (Production, Preview, Development):
+1. **https://vercel.com** → sign in with GitHub → **Add New → Project** → import
+   `HLPL-Expense-Dashboard`.
+2. Add three **Environment Variables**, ticking Production, Preview and Development:
 
    | Name | Value |
    |---|---|
-   | `DATABASE_URL` | the pooled string from step 1a |
-   | `DIRECT_URL` | the direct string from step 1b |
-   | `AUTH_SECRET` | the same secret you generated in step 2 |
+   | `DATABASE_URL` | the pooled string |
+   | `DIRECT_URL` | the direct string |
+   | `AUTH_SECRET` | any long random string — Vercel's **Generate** button is fine |
 
-   Use the *same* `AUTH_SECRET` as your local `.env`. Changing it later signs everyone out.
+   `AUTH_SECRET` signs the login cookie. Changing it later signs everyone out.
+3. **Settings → Git → Production Branch**: set it to the branch holding the code, or
+   merge that branch into `main` on GitHub first and leave this alone. Whichever branch
+   you choose here is what "live" means from then on.
+4. **Deploy.**
 
-5. Set **Production Branch**. The code is on `claude/expense-dashboard-roles-zi14wl`,
-   not `main`. Either merge that branch into `main` first, or go to
-   **Settings → Git → Production Branch** and point it at
-   `claude/expense-dashboard-roles-zi14wl`.
-6. **Deploy.**
+The build applies the migrations on its own, so the database has its tables when the
+site comes up.
 
-Two to three minutes later you get a URL like `hlpl-expense-dashboard.vercel.app`.
-Open it, sign in as `krinesh@araviorganic.com`, and the dashboard should show your
-FY26-27 data.
+### 3. Create your login
+
+The first deploy has an empty database and no users, so there is nobody to sign in as.
+Ask Claude:
+
+> *Add a one-time setup route that creates the category master and my founder login.*
+
+Claude will add a protected route, you open it once in the browser, and it seeds the 25
+categories and your account. Then tell Claude to remove it, which takes one more deploy.
+
+### 4. Load your old sheets
+
+Sign in and go to **Import**. Upload the three workbooks and press Import. It loads 692
+expenses and 92 cash movements and shows you exactly what it did, including anything it
+could not classify.
+
+Safe to repeat: it replaces everything it imported last time, and never touches entries
+your team has typed into the app.
+
+### 5. Set up your team
+
+Go to **People**:
+
+- **Add person** — name, email, role, password. Role decides what they see: a warehouse
+  user is locked to warehouse expenses and cannot open your screens at all.
+- **Change password** — including your own. Change all of them before sharing the link.
+- **Remove access** — keeps their past entries, stops them signing in.
+
+Tell Hardikbhai and Maulikbhai to open the site on their phone and use **Add to Home
+screen** in the Chrome menu. It then behaves like an app.
 
 ---
 
-## 4. Lock it down before anyone else gets the link
+## Asking Claude for changes
 
-**Change the three passwords.** Everyone currently shares the seeded password. There is
-no password-change screen yet, so set them from your Mac:
+Describe the outcome, not the code. Useful examples:
 
-```bash
-npm run set-password -- krinesh@araviorganic.com 'your-password'
-npm run set-password -- wh@araviorganic.com     'hardik-password'
-npm run set-password -- ho@araviorganic.com     'maulik-password'
-```
+> *Add a "Vehicle & Fuel" expense category, open to the warehouse only, with a ₹8,000
+> monthly budget, posting to the "Vehicle Running Expenses" ledger in Tally.*
 
-Wrap the password in single quotes — otherwise your shell will eat characters like `!`.
+> *On the dashboard, show what we spent per order shipped, using a monthly order count
+> I can type in.*
 
-Give Hardikbhai and Maulikbhai only their own password. Neither can see the other's
-expenses or yours — that is enforced on the server, not in the screen.
+> *Warehouse staff keep picking the wrong category for pasti sales. Make that a cash
+> receipt instead of an expense.*
 
-**Tell them to add it to their home screen.** On Android Chrome: open the URL, menu,
-*Add to Home screen*. It then opens like an app, which matters for daily use.
+> *Send me an email on the 1st of every month with last month's spend by team.*
 
----
-
-## 5. A custom domain (optional)
-
-If you own a domain, **Vercel → Settings → Domains** and add something like
-`expense.araviorganic.com`. Vercel shows the CNAME record to add at your registrar,
-and issues the HTTPS certificate automatically.
+Two minutes after Claude finishes, the live site has the change. If something looks
+wrong, say so — Vercel keeps every previous version, and **Deployments → ⋯ → Promote to
+Production** on an older one rolls back immediately.
 
 ---
 
 ## Running costs
 
-| | Free tier | Your usage |
-|---|---|---|
-| Neon | 0.5 GB storage, 190 compute-hours/month | ~800 rows/year — far inside it |
-| Vercel | 100 GB bandwidth, unlimited deploys | 3 users — far inside it |
-
-Neon's free tier suspends the database after five minutes idle. The first request after
-that takes two or three seconds to wake it, then it is fast again. If that becomes
-annoying, Neon's paid tier (about $19/month) keeps it always on.
+Neon and Vercel are both free at your volume — roughly 800 rows a year. Neon's free tier
+sleeps after five minutes idle, so the first request each morning takes two or three
+seconds. Their paid tier (~$19/month) removes that if it becomes annoying.
 
 ---
 
 ## When something goes wrong
 
-**Build fails with "Prisma Client could not locate the Query Engine"**
-`postinstall: prisma generate` is in `package.json` and handles this. If it still
-happens, clear Vercel's build cache: **Settings → General → Clear Build Cache**, redeploy.
+**The deploy failed.** Open the failed deployment on Vercel and read the last lines of
+the log, then paste them to Claude.
 
-**"Can't reach database server"**
-`DATABASE_URL` is missing `?sslmode=require`, or you pasted the direct string where the
-pooled one belongs. Neon requires SSL.
+**"Can't reach database server"** — `DATABASE_URL` is missing `?sslmode=require`, or the
+direct string was pasted where the pooled one belongs.
 
-**"prepared statement s0 already exists"**
-The pooled string is missing `&pgbouncer=true&connection_limit=1`.
+**"prepared statement s0 already exists"** — the pooled string is missing
+`&pgbouncer=true&connection_limit=1`.
 
-**`prisma migrate deploy` hangs or times out**
-You are running it against the pooled string. It needs `DIRECT_URL` — the host without
-`-pooler`.
+**Everyone was signed out** — `AUTH_SECRET` changed. Set it back, or have everyone sign
+in again.
 
-**Everyone is signed out after a deploy**
-`AUTH_SECRET` changed between environments. Set the same value everywhere.
-
-**Login says "Email or password is incorrect" for a user you just seeded**
-Check you seeded against the Neon database, not your local one — `echo $DATABASE_URL`
-inside the project directory.
+**A migration failed during deploy** — the site keeps serving the previous version.
+Tell Claude what the log said.
 
 ---
 
-## Adding a fourth user later
+## If you ever do want a terminal
+
+The same jobs exist as commands, for whoever maintains this later:
 
 ```bash
-npm run add-user -- "Ravi Patel" ravi@araviorganic.com WH 'their-password'
+npm install
+npx prisma migrate deploy
+npm run seed
+npm run import                                        # reads ./data/{founder,wh,ho}.xlsx
+npm run add-user -- "Name" email@x.com WH 'password'
+npm run set-password -- email@x.com 'password'
 ```
 
-The role is `FOUNDER`, `WH` or `HO`. It decides both which screens they can reach and
-which expenses they can see — a `WH` user is locked to warehouse expenses and cannot be
-shown anything else.
-
-To stop someone having access, deactivate rather than delete, so their past entries keep
-their author:
-
-```bash
-npx prisma studio
-```
-
-Open the `User` table and untick `active`. They are signed out on their next request.
+They need `DATABASE_URL`, `DIRECT_URL` and `AUTH_SECRET` in a `.env` file.
