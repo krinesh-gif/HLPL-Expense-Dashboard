@@ -1,6 +1,7 @@
 "use client";
 import { useActionState, useMemo, useState, useRef, useEffect } from "react";
 import { addExpense, type EntryState } from "@/app/actions/expense";
+import { enqueue, newClientId } from "@/lib/outbox";
 import { isColorKey } from "@/lib/palette";
 
 export type CatOption = {
@@ -14,7 +15,8 @@ const inr = (v: number) => "₹" + new Intl.NumberFormat("en-IN", { maximumFract
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function EntryForm({ categories }: { categories: CatOption[] }) {
-  const [state, action, pending] = useActionState<EntryState, FormData>(addExpense, {});
+  const [state, setState] = useState<EntryState>({});
+  const [pending, setPending] = useState(false);
   const [catId, setCatId] = useState("");
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState<(typeof MODES)[number]>("CASH");
@@ -32,6 +34,52 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
       amountRef.current?.focus();
     }
   }, [state.ok]);
+
+  /**
+   * Try the server first. If the request cannot leave the phone, keep the entry in
+   * the outbox and tell the user it is saved — the whole point is that a warehouse
+   * dead spot never costs an entry.
+   */
+  async function submit(form: FormData) {
+    setPending(true);
+    const clientId = newClientId();
+    form.set("clientId", clientId);
+
+    const queue = async () => {
+      await enqueue({
+        clientId,
+        date: String(form.get("date") ?? ""),
+        categoryId: String(form.get("categoryId") ?? ""),
+        categoryName: cat?.name ?? "",
+        amount: Number(form.get("amount") ?? 0),
+        paymentMode: String(form.get("paymentMode") ?? "CASH"),
+        paidTo: String(form.get("paidTo") ?? "") || undefined,
+        description: String(form.get("description") ?? "") || undefined,
+        billNo: String(form.get("billNo") ?? "") || undefined,
+        queuedAt: Date.now(),
+        attempts: 0,
+      });
+      window.dispatchEvent(new Event("hlpl:queued"));
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await queue();
+      setPending(false);
+      setState({ ok: `Saved on this phone — ₹${amt.toLocaleString("en-IN")} will send when the signal returns.` });
+      return;
+    }
+
+    try {
+      const res = await addExpense({}, form);
+      setState(res);
+    } catch {
+      // the server was unreachable mid-request; do not lose the entry
+      await queue();
+      setState({ ok: `Saved on this phone — ₹${amt.toLocaleString("en-IN")} will send when the signal returns.` });
+    } finally {
+      setPending(false);
+    }
+  }
 
   const cat = categories.find((c) => c.id === catId);
   const amt = parseFloat(amount) || 0;
@@ -52,7 +100,7 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
   const wouldExceed = budgetLeft !== null && amt > budgetLeft;
 
   return (
-    <form ref={formRef} action={action} className="card p-5">
+    <form ref={formRef} action={submit} className="card p-5">
       <input type="hidden" name="categoryId" value={catId} />
       <input type="hidden" name="paymentMode" value={mode} />
 

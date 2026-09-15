@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { logout } from "@/app/actions/auth";
 import NavLink from "@/components/NavLink";
 import ThemeToggle from "@/components/ThemeToggle";
+import InstallPrompt from "@/components/InstallPrompt";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireUser();
@@ -17,11 +18,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/categories", label: "Categories" },
         { href: "/users", label: "People" },
         { href: "/import", label: "Import" },
+        { href: "/settings", label: "Settings" },
       ]
     : [
         { href: "/entry", label: "Add expense" },
         { href: "/expenses", label: "My expenses" },
         { href: "/reconcile", label: "Cash in hand" },
+        { href: "/settings", label: "Settings" },
       ];
 
   const scope = founder ? "Founder" : s.costCenter === "WH" ? "Warehouse" : "Head Office";
@@ -73,7 +76,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </nav>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
+        <InstallPrompt />
+        {children}
+      </main>
     </div>
   );
 }

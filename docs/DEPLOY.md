@@ -111,6 +111,63 @@ screen** in the Chrome menu. It then behaves like an app.
 
 ---
 
+## Putting it on your team's phones
+
+The dashboard is a Progressive Web App: it installs to the home screen, opens
+without a browser bar, stays signed in, and keeps accepting expenses when the
+warehouse has no signal.
+
+**To install** — open the site on the phone and follow the prompt, or go to
+**Settings** in the app:
+
+- **Android (Chrome):** menu (⋮) → *Install app*
+- **iPhone (Safari):** Share → *Add to Home Screen*, then open it from the new icon
+
+On iPhone this step is not optional. Safari only gives a site offline storage and
+notifications once it is on the home screen, so an iPhone used from Safari itself
+gets neither.
+
+**Offline entry.** With no signal the entry form still saves; the expense is held
+on the phone and sent the moment the connection returns. Each entry carries an id
+generated on the device, so a retry cannot record the same spend twice. The page
+shows how many entries are waiting. Balances and reports are never served from a
+cache — a stale float balance is worse than saying "you are offline".
+
+### Daily reminders (optional)
+
+A notification at 6pm IST telling each person what they have recorded today and
+what cash they are still holding. Set up once on the server, then each person turns
+it on for their own phone under **Settings**.
+
+1. Generate a key pair:
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+2. Add four variables on Vercel (**Settings → Environment Variables**):
+
+   | Name | Value |
+   |---|---|
+   | `VAPID_PUBLIC_KEY` | from the command above |
+   | `VAPID_PRIVATE_KEY` | from the command above |
+   | `VAPID_SUBJECT` | `mailto:krinesh@araviorganic.com` |
+   | `CRON_SECRET` | any long random string |
+
+3. Redeploy. `vercel.json` already schedules the job for 12:30 UTC, which is 6pm IST.
+
+Without these the app works exactly as before; the reminder toggle just says it is
+not set up. Each phone subscribes separately, so Hardikbhai turning reminders on
+does nothing to Maulikbhai's phone.
+
+**A note on what was and was not tested.** Installation, offline entry, the sync
+queue and the duplicate protection were all verified in a real browser. Push
+delivery could not be: the test environment has no connection to Apple's or
+Google's push services, so the last step — a notification actually arriving — needs
+checking on a real phone. Use **Settings → Send a test** once reminders are on.
+
+---
+
 ## Asking Claude for changes
 
 Describe the outcome, not the code. Useful examples:

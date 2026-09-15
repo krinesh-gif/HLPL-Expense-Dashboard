@@ -6,6 +6,7 @@ import { entryCostCenter, expenseScope, requireUser } from "@/lib/auth";
 import { n } from "@/lib/money";
 
 const Schema = z.object({
+  clientId: z.string().trim().max(64).optional(),
   date: z.string().min(10),
   categoryId: z.string().min(1, "Pick a category."),
   amount: z.coerce.number().positive("Enter an amount above zero.").max(10_000_000),
@@ -33,19 +34,38 @@ export async function addExpense(_prev: EntryState, form: FormData): Promise<Ent
     return { error: `“${cat.name}” needs a bill number for ₹${d.amount.toLocaleString("en-IN")}.` };
   }
 
-  await prisma.expense.create({
-    data: {
-      date: new Date(d.date + "T00:00:00Z"),
-      costCenter,
-      categoryId: d.categoryId,
-      amount: d.amount,
-      paymentMode: d.paymentMode,
-      paidTo: d.paidTo || null,
-      description: d.description || null,
-      billNo: d.billNo || null,
-      enteredById: s.uid,
-    },
-  });
+  // An entry queued offline may be retried; clientId makes the write idempotent so
+  // a half-completed request cannot record the same spend twice.
+  if (d.clientId) {
+    const already = await prisma.expense.findUnique({ where: { clientId: d.clientId } });
+    if (already) {
+      return { ok: `Already recorded ₹${d.amount.toLocaleString("en-IN")} — ${cat.name}.` };
+    }
+  }
+
+  try {
+    await prisma.expense.create({
+      data: {
+        date: new Date(d.date + "T00:00:00Z"),
+        costCenter,
+        categoryId: d.categoryId,
+        amount: d.amount,
+        paymentMode: d.paymentMode,
+        paidTo: d.paidTo || null,
+        description: d.description || null,
+        billNo: d.billNo || null,
+        clientId: d.clientId || null,
+        enteredById: s.uid,
+      },
+    });
+  } catch (e) {
+    // Two devices syncing the same queued entry at once both pass the check above;
+    // the unique index settles it and the loser is already recorded.
+    if (typeof e === "object" && e && "code" in e && e.code === "P2002") {
+      return { ok: `Already recorded ₹${d.amount.toLocaleString("en-IN")} — ${cat.name}.` };
+    }
+    throw e;
+  }
 
   revalidatePath("/entry");
   revalidatePath("/expenses");

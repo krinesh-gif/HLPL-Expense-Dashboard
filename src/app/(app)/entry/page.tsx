@@ -2,6 +2,7 @@ import { requireUser, entryCostCenter } from "@/lib/auth";
 import { budgetUsage, entryCategories, floatBalance } from "@/lib/queries";
 import { rs } from "@/lib/money";
 import EntryForm from "@/components/EntryForm";
+import OfflineSync from "@/components/OfflineSync";
 
 export default async function EntryPage() {
   const s = await requireUser();
@@ -39,6 +40,7 @@ export default async function EntryPage() {
           </p>
         )}
       </div>
+      <OfflineSync />
       <EntryForm categories={options} />
     </div>
   );

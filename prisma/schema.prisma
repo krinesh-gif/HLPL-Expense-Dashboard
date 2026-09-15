@@ -52,6 +52,7 @@ model User {
   approvals    Expense[]       @relation("ApprovedBy")
   cashTxns     CashTxn[]
   counts       CashCount[]
+  pushSubs     PushSubscription[]
 }
 
 /// Expense category master. One canonical taxonomy shared by all three teams.
@@ -111,6 +112,10 @@ model Expense {
   voidReason   String?
 
   legacyRef   String?     /// provenance of rows migrated from the old workbooks
+  /// Generated on the device before the entry is sent. An entry made offline may be
+  /// retried several times before it lands; this makes the write idempotent so a
+  /// flaky warehouse connection cannot record the same spend twice.
+  clientId    String?     @unique
   createdAt   DateTime    @default(now())
 
   @@index([costCenter, date])
@@ -137,6 +142,21 @@ model CashTxn {
 
   @@index([type, date])
   @@index([toCostCenter, date])
+}
+
+/// A device signed up for reminder notifications. One row per browser install.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  /// cleared whenever a send succeeds; used to drop dead subscriptions
+  failures  Int      @default(0)
+
+  @@index([userId])
 }
 
 /// Physical cash count declared by a team, to reconcile against the system float balance.

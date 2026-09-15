@@ -72,6 +72,17 @@ head — `Pani Puri-Maulik`, `cake` and `Staff Food & Tea` all become **Staff Fo
 (mostly "Office Operations" and "Other"). It cannot be picked for new entries, and the
 dashboard nags until the backlog is cleared.
 
+## On the team's phones
+
+It installs to the home screen as a Progressive Web App and keeps working without
+signal — an expense recorded in a dead spot is held on the phone and sent when the
+connection returns, with a device-generated id making the write idempotent so a
+retry cannot double-record it. Nothing from the network is cached, so a stale float
+balance is never shown; the offline page says so plainly instead.
+
+An optional 6pm reminder tells each person what they have recorded that day and
+what cash they are still holding. Setup is in [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Month-end
 
 `Export for Tally` on the dashboard produces a CSV with one row per voucher, carrying
