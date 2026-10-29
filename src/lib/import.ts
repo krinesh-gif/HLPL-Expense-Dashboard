@@ -89,9 +89,10 @@ const str = (v: unknown): string => String(v ?? "").trim();
 
 const mode = (v: unknown): PaymentMode => {
   const s = str(v).toLowerCase();
-  if (s.startsWith("online") || s.includes("upi") || s.includes("gpay") || s.includes("paytm")) return "UPI";
-  if (s.includes("bank") || s.includes("neft") || s.includes("imps") || s.includes("transfer")) return "BANK";
-  if (s.includes("card")) return "CARD";
+  // Anything that is not physical cash is recorded as ONLINE.
+  if (s.startsWith("online") || s.includes("upi") || s.includes("gpay") || s.includes("paytm")) return "ONLINE";
+  if (s.includes("bank") || s.includes("neft") || s.includes("imps") || s.includes("transfer")) return "ONLINE";
+  if (s.includes("card")) return "ONLINE";
   return "CASH";
 };
 

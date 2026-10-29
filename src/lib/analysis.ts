@@ -88,15 +88,37 @@ export async function alerts(mKey: string) {
     });
   }
 
-  const inTransit = await prisma.cashTxn.findMany({
-    where: { type: "ISSUE", voidedAt: null, note: { contains: "not yet acknowledged" } },
-    select: { amount: true, toCostCenter: true, date: true },
+  // Hand-overs one side recorded and the other has not agreed to. These are the
+  // gaps that used to sit invisible between the founder's book and a team's.
+  const unconfirmed = await prisma.cashTxn.findMany({
+    where: { type: "ISSUE", status: "PENDING", voidedAt: null },
+    select: { amount: true, toCostCenter: true, date: true, initiatedBy: true },
+    orderBy: { date: "asc" },
   });
-  for (const t of inTransit) {
+  for (const t of unconfirmed) {
+    const byFounder = t.initiatedBy === "FOUNDER";
     out.push({
       kind: "danger",
-      title: `${t.toCostCenter} has not acknowledged a cash hand-over`,
-      detail: `Issued ${t.date.toISOString().slice(0, 10)} and still not recorded in the team's book.`,
+      title: byFounder
+        ? `${t.toCostCenter} has not confirmed a hand-over you recorded`
+        : `${t.toCostCenter} says they received cash you have not confirmed`,
+      detail: byFounder
+        ? `Recorded ${t.date.toISOString().slice(0, 10)}. It is out of your hand but not in their float until they confirm.`
+        : `Recorded ${t.date.toISOString().slice(0, 10)}. Confirm it on Cash & float, or send it back if it is wrong.`,
+      amount: n(t.amount),
+    });
+  }
+
+  const rejected = await prisma.cashTxn.findMany({
+    where: { type: "ISSUE", status: "REJECTED", voidedAt: null },
+    select: { amount: true, toCostCenter: true, rejectedReason: true },
+    take: 5,
+  });
+  for (const t of rejected) {
+    out.push({
+      kind: "warn",
+      title: `A ${t.toCostCenter} hand-over is disputed`,
+      detail: t.rejectedReason ?? "One side disagrees about this transfer.",
       amount: n(t.amount),
     });
   }

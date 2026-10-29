@@ -10,7 +10,7 @@ export type CatOption = {
   requiresBill: boolean; billThreshold: number | null;
 };
 
-const MODES = ["CASH", "UPI", "BANK", "CARD"] as const;
+const MODES = ["CASH", "ONLINE"] as const;
 const inr = (v: number) => "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(v));
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -170,14 +170,14 @@ export default function EntryForm({ categories }: { categories: CatOption[] }) {
       {/* Payment mode */}
       <div className="mt-5">
         <span className="label">Paid by</span>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {MODES.map((m) => (
             <button key={m} type="button" onClick={() => setMode(m)}
               aria-pressed={mode === m}
               className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
                 mode === m ? "border-brand bg-brand-soft text-brand" : "border-line bg-surface text-muted hover:bg-canvas"
               }`}>
-              {m === "CASH" ? "Cash" : m === "BANK" ? "Bank" : m === "CARD" ? "Card" : "UPI"}
+              {m === "CASH" ? "Cash" : "Online"}
             </button>
           ))}
         </div>

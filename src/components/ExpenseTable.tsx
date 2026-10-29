@@ -17,8 +17,8 @@ export type Cat = {
 };
 
 const CC_LABEL: Record<string, string> = { WH: "Warehouse", HO: "Head Office", FOUNDER: "Founder" };
-const MODES = ["CASH", "UPI", "BANK", "CARD"] as const;
-const MODE_LABEL: Record<string, string> = { CASH: "Cash", UPI: "UPI", BANK: "Bank", CARD: "Card" };
+const MODES = ["CASH", "ONLINE"] as const;
+const MODE_LABEL: Record<string, string> = { CASH: "Cash", ONLINE: "Online" };
 
 const inr = (v: number) => "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(v));
 const day = (iso: string) =>

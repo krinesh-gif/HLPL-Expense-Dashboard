@@ -10,7 +10,7 @@ const Schema = z.object({
   date: z.string().min(10),
   categoryId: z.string().min(1, "Pick a category."),
   amount: z.coerce.number().positive("Enter an amount above zero.").max(10_000_000),
-  paymentMode: z.enum(["CASH", "UPI", "BANK", "CARD"]),
+  paymentMode: z.enum(["CASH", "ONLINE"]),
   paidTo: z.string().trim().max(120).optional(),
   description: z.string().trim().max(300).optional(),
   billNo: z.string().trim().max(60).optional(),

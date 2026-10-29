@@ -24,14 +24,21 @@ enum CostCenter {
   FOUNDER
 }
 
+/// The two ways money actually leaves: physical cash, or anything electronic.
+/// This is the vocabulary the team already used in the old sheets.
 enum PaymentMode {
   CASH
-  UPI
-  BANK
-  CARD
+  ONLINE
 }
 
 /// Money moving in and out of the founder's cash chest.
+/// A hand-over of cash needs both sides to agree before it counts.
+enum TransferStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
 enum CashTxnType {
   RECEIPT /// cash coming in to the founder (supplier refund, billing recovery, sales collection)
   ISSUE   /// founder hands cash to a cost centre float (WH / HO)
@@ -51,6 +58,7 @@ model User {
   expenses     Expense[]       @relation("EnteredBy")
   approvals    Expense[]       @relation("ApprovedBy")
   cashTxns     CashTxn[]
+  confirmedCash CashTxn[]  @relation("ConfirmedCash")
   counts       CashCount[]
   pushSubs     PushSubscription[]
 }
@@ -136,12 +144,25 @@ model CashTxn {
 
   createdById String
   createdBy   User        @relation(fields: [createdById], references: [id])
+
+  /// Only ISSUE transfers between the founder and a team are confirmed by the other
+  /// side. Everything else (receipts into the founder's chest, drawings, a team's own
+  /// scrap sale) is settled the moment it is recorded and stays CONFIRMED.
+  status       TransferStatus @default(CONFIRMED)
+  /// Which side recorded it, so each side is asked to confirm the other's claim.
+  initiatedBy  Role?
+  confirmedById String?
+  confirmedBy   User?      @relation("ConfirmedCash", fields: [confirmedById], references: [id])
+  confirmedAt   DateTime?
+  rejectedReason String?
+
   voidedAt    DateTime?
   legacyRef   String?
   createdAt   DateTime    @default(now())
 
   @@index([type, date])
   @@index([toCostCenter, date])
+  @@index([status, toCostCenter])
 }
 
 /// A device signed up for reminder notifications. One row per browser install.

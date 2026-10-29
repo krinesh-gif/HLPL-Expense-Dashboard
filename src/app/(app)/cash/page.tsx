@@ -4,11 +4,12 @@ import { floatBalance, founderCashPosition } from "@/lib/queries";
 import { rs } from "@/lib/money";
 import { voidCashTxn } from "@/app/actions/cash";
 import CashForm from "@/components/CashForm";
+import TransferList from "@/components/TransferList";
 import Stat from "@/components/Stat";
 
 export default async function CashPage() {
   await requireFounder();
-  const [pos, wh, ho, txns, counts] = await Promise.all([
+  const [pos, wh, ho, txns, counts, waiting] = await Promise.all([
     founderCashPosition(),
     floatBalance("WH"),
     floatBalance("HO"),
@@ -19,6 +20,11 @@ export default async function CashPage() {
       include: { createdBy: { select: { name: true } } },
     }),
     prisma.cashCount.findMany({ orderBy: { date: "desc" }, take: 6, include: { countedBy: { select: { name: true } } } }),
+    // claims a team has recorded that the founder has not agreed to yet
+    prisma.cashTxn.findMany({
+      where: { type: "ISSUE", status: "PENDING", initiatedBy: { not: "FOUNDER" }, voidedAt: null },
+      orderBy: { date: "desc" },
+    }),
   ]);
 
   return (
@@ -30,10 +36,22 @@ export default async function CashPage() {
         <Stat label="With you" value={rs(pos.inHand)} tone={pos.inHand < 0 ? "danger" : "default"}
               hint={`${pos.fyLabel}: received less issued, drawn and spent`} />
         <Stat label="Warehouse float" value={rs(wh.balance)} tone={wh.balance < 0 ? "danger" : "default"}
-              hint={`${rs(wh.received)} in · ${rs(wh.spent)} spent`} />
+              hint={wh.pendingCount > 0
+                ? `${rs(wh.pendingAmount)} awaiting confirmation`
+                : `${rs(wh.received)} in · ${rs(wh.spent)} spent`} />
         <Stat label="Head office float" value={rs(ho.balance)} tone={ho.balance < 0 ? "danger" : "default"}
-              hint={`${rs(ho.received)} in · ${rs(ho.spent)} spent`} />
+              hint={ho.pendingCount > 0
+                ? `${rs(ho.pendingAmount)} awaiting confirmation`
+                : `${rs(ho.received)} in · ${rs(ho.spent)} spent`} />
       </div>
+
+      <TransferList
+        asFounder
+        rows={waiting.map((t) => ({
+          id: t.id, date: t.date.toISOString().slice(0, 10), amount: Number(t.amount),
+          note: t.note, source: t.source, costCenter: t.toCostCenter, initiatedBy: t.initiatedBy,
+        }))}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <CashForm />
@@ -70,7 +88,19 @@ export default async function CashPage() {
                       <span className="text-xs text-muted">{t.source}</span>
                     </p>
                     <p className="mt-0.5 truncate text-sm text-muted">{t.note || "—"}</p>
-                    <p className="mt-1 text-xs text-muted">{t.date.toISOString().slice(0, 10)}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                      {t.date.toISOString().slice(0, 10)}
+                      {t.status === "PENDING" && (
+                        <span className="chip border-transparent bg-warn-soft px-1.5 py-0 text-[10px] text-warn">
+                          not confirmed
+                        </span>
+                      )}
+                      {t.status === "REJECTED" && (
+                        <span className="chip border-transparent bg-danger-soft px-1.5 py-0 text-[10px] text-danger">
+                          disputed{t.rejectedReason ? `: ${t.rejectedReason}` : ""}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className={`num font-semibold ${t.type === "RECEIPT" ? "text-brand" : "text-ink"}`}>

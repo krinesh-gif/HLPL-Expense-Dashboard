@@ -58,14 +58,25 @@ export async function budgetUsage(cc: CostCenter | null, mKey = monthKey(new Dat
 }
 
 /**
- * Cash a team is holding: everything issued or received into its float,
- * less everything it has spent in cash.
+ * Cash a team is holding.
+ *
+ * Only confirmed hand-overs count. A transfer one side has recorded but the other
+ * has not yet agreed to is deliberately left out: counting an unconfirmed claim
+ * would let a shortfall hide behind it, which is the whole point of asking both
+ * sides to sign.
  */
 export async function floatBalance(cc: CostCenter) {
-  const [inAgg, outAgg] = await Promise.all([
+  const [inAgg, pendingAgg, outAgg] = await Promise.all([
     prisma.cashTxn.aggregate({
-      where: { toCostCenter: cc, voidedAt: null, type: { in: ["ISSUE", "RECEIPT"] } },
+      where: {
+        toCostCenter: cc, voidedAt: null, status: "CONFIRMED",
+        type: { in: ["ISSUE", "RECEIPT"] },
+      },
       _sum: { amount: true },
+    }),
+    prisma.cashTxn.aggregate({
+      where: { toCostCenter: cc, voidedAt: null, status: "PENDING", type: "ISSUE" },
+      _sum: { amount: true }, _count: { _all: true },
     }),
     prisma.expense.aggregate({
       where: { costCenter: cc, paymentMode: "CASH", ...LIVE },
@@ -74,7 +85,13 @@ export async function floatBalance(cc: CostCenter) {
   ]);
   const received = n(inAgg._sum.amount);
   const spent = n(outAgg._sum.amount);
-  return { received, spent, balance: received - spent };
+  return {
+    received,
+    spent,
+    balance: received - spent,
+    pendingAmount: n(pendingAgg._sum.amount),
+    pendingCount: pendingAgg._count._all,
+  };
 }
 
 /**
@@ -87,17 +104,36 @@ export async function floatBalance(cc: CostCenter) {
 export async function founderCashPosition() {
   const fy = fiscalYear();
   const range = { gte: fy.start, lte: fy.end };
-  const [receipts, issues, drawings, spends] = await Promise.all([
+  const [receipts, issues, inTransit, drawings, spends] = await Promise.all([
     prisma.cashTxn.aggregate({ where: { type: "RECEIPT", toCostCenter: null, voidedAt: null, date: range }, _sum: { amount: true } }),
-    prisma.cashTxn.aggregate({ where: { type: "ISSUE", voidedAt: null, date: range }, _sum: { amount: true } }),
+    // Cash the founder has parted with: anything they recorded themselves, plus a
+    // team's claim once the founder has agreed to it.
+    prisma.cashTxn.aggregate({
+      where: {
+        type: "ISSUE", voidedAt: null, date: range,
+        OR: [{ initiatedBy: "FOUNDER", status: { not: "REJECTED" } }, { status: "CONFIRMED" }],
+      },
+      _sum: { amount: true },
+    }),
+    prisma.cashTxn.aggregate({
+      where: { type: "ISSUE", voidedAt: null, status: "PENDING", date: range },
+      _sum: { amount: true }, _count: { _all: true },
+    }),
     prisma.cashTxn.aggregate({ where: { type: "DRAWING", voidedAt: null, date: range }, _sum: { amount: true } }),
     prisma.expense.aggregate({ where: { costCenter: "FOUNDER", paymentMode: "CASH", date: range, ...LIVE }, _sum: { amount: true } }),
   ]);
+
   const received = n(receipts._sum.amount);
   const issued = n(issues._sum.amount);
   const drawn = n(drawings._sum.amount);
   const spent = n(spends._sum.amount);
-  return { received, issued, drawn, spent, inHand: received - issued - drawn - spent, fyLabel: fy.label };
+  return {
+    received, issued, drawn, spent,
+    inHand: received - issued - drawn - spent,
+    inTransitAmount: n(inTransit._sum.amount),
+    inTransitCount: inTransit._count._all,
+    fyLabel: fy.label,
+  };
 }
 
 /** Group expense totals by cost centre for a date range. */

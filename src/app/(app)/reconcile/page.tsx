@@ -4,53 +4,97 @@ import { floatBalance } from "@/lib/queries";
 import { rs } from "@/lib/money";
 import { redirect } from "next/navigation";
 import CountForm from "@/components/CountForm";
+import CashReceivedForm from "@/components/CashReceivedForm";
+import TransferList from "@/components/TransferList";
 
-export default async function ReconcilePage() {
+export default async function CashPage() {
   const s = await requireUser();
   if (!s.costCenter) redirect("/cash");
 
-  const [float, recent] = await Promise.all([
+  const [float, waiting, recent, counts] = await Promise.all([
     floatBalance(s.costCenter),
+    // hand-overs the founder recorded that this team has not agreed to yet
+    prisma.cashTxn.findMany({
+      where: {
+        toCostCenter: s.costCenter, type: "ISSUE", status: "PENDING",
+        initiatedBy: "FOUNDER", voidedAt: null,
+      },
+      orderBy: { date: "desc" },
+    }),
+    prisma.cashTxn.findMany({
+      where: { toCostCenter: s.costCenter, voidedAt: null },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 12,
+    }),
     prisma.cashCount.findMany({
       where: { costCenter: s.costCenter },
-      orderBy: { date: "desc" }, take: 8,
+      orderBy: { date: "desc" }, take: 6,
       include: { countedBy: { select: { name: true } } },
     }),
   ]);
 
+  const myClaims = recent.filter((t) => t.status === "PENDING" && t.initiatedBy !== "FOUNDER");
+
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-lg space-y-5">
       <div>
-        <h1 className="text-lg font-semibold">Cash in hand</h1>
-        <p className="mt-1 text-sm text-muted">
-          Count the cash you are physically holding and record it. If it does not match the
-          book, say why — that gap is what the founder needs to see.
+        <h1 className="text-2xl font-semibold tracking-tight">Cash in hand</h1>
+        <p className="mt-0.5 text-sm text-muted">
+          Record cash you take in, confirm what Krinesh sends, and count what you are holding.
         </p>
       </div>
 
       <div className="card p-5">
-        <p className="text-xs text-muted">Book balance</p>
+        <p className="text-xs uppercase tracking-wider text-muted">Your cash in hand</p>
         <p className={`num mt-1 text-3xl font-semibold ${float.balance < 0 ? "text-danger" : ""}`}>
           {rs(float.balance)}
         </p>
         <p className="mt-2 text-xs text-muted">
           {rs(float.received)} received · {rs(float.spent)} spent in cash
         </p>
+        {float.pendingCount > 0 && (
+          <p className="mt-3 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
+            {rs(float.pendingAmount)} is still waiting to be confirmed, so it is not counted above.
+          </p>
+        )}
       </div>
+
+      <TransferList
+        asFounder={false}
+        rows={waiting.map((t) => ({
+          id: t.id, date: t.date.toISOString().slice(0, 10), amount: Number(t.amount),
+          note: t.note, source: t.source, costCenter: t.toCostCenter, initiatedBy: t.initiatedBy,
+        }))}
+      />
+
+      <CashReceivedForm />
+
+      {myClaims.length > 0 && (
+        <section className="card p-5">
+          <h2 className="text-sm font-semibold">Waiting on Krinesh</h2>
+          <ul className="mt-3 divide-y divide-line text-sm">
+            {myClaims.map((t) => (
+              <li key={t.id} className="flex items-baseline justify-between gap-3 py-2">
+                <span className="text-muted">{t.date.toISOString().slice(0, 10)}</span>
+                <span className="num font-medium">{rs(t.amount)}</span>
+                <span className="text-xs text-warn">not confirmed yet</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <CountForm bookBalance={float.balance} />
 
-      {recent.length > 0 && (
+      {counts.length > 0 && (
         <section className="card p-5">
           <h2 className="mb-3 text-sm font-semibold">Past counts</h2>
           <ul className="divide-y divide-line text-sm">
-            {recent.map((c) => (
+            {counts.map((c) => (
               <li key={c.id} className="py-2.5">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-muted">{c.date.toISOString().slice(0, 10)}</span>
-                  <span className="num">
-                    counted {rs(c.countedAmount)} · book {rs(c.systemAmount)}
-                  </span>
+                  <span className="num">counted {rs(c.countedAmount)} · book {rs(c.systemAmount)}</span>
                   <span className={`num font-medium ${Number(c.variance) !== 0 ? "text-danger" : "text-brand"}`}>
                     {Number(c.variance) === 0 ? "ok" : `${Number(c.variance) > 0 ? "+" : "−"}${rs(Math.abs(Number(c.variance)))}`}
                   </span>
