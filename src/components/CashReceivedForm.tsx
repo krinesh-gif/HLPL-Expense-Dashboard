@@ -56,8 +56,8 @@ export default function CashReceivedForm() {
             <input id="r-date" name="date" type="date" defaultValue={today} max={today} className="input" />
           </div>
           <div>
-            <label className="label" htmlFor="r-note">Note</label>
-            <input id="r-note" name="note" className="input" placeholder="Optional" />
+            <label className="label" htmlFor="r-note">Description</label>
+            <input id="r-note" name="note" className="input" placeholder="What it was for" />
           </div>
         </div>
       </div>

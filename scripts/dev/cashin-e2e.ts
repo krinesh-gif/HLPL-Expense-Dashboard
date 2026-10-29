@@ -13,7 +13,7 @@ async function main() {
   await p.fill("#email", "wh@araviorganic.com"); await p.fill("#password", "Change@123");
   await p.click("button[type=submit]"); await p.waitForURL("**/entry");
   await p.goto(BASE + "/reconcile");
-  await p.waitForSelector("h2:has-text('Cash received')");
+  await p.getByRole("heading", { name: "Cash received", exact: true }).waitFor();
 
   const inDb = await prisma.cashTxn.findMany({
     where: { toCostCenter: "WH", voidedAt: null, type: { in: ["ISSUE", "RECEIPT"] } },
@@ -22,17 +22,19 @@ async function main() {
   const confirmed = inDb.filter((r) => r.status === "CONFIRMED");
   const total = confirmed.reduce((a, r) => a + Number(r.amount), 0);
 
-  const section = p.locator("section").filter({ hasText: "Cash received" }).first();
-  const header = (await section.locator("p").first().innerText()).trim();
-  const listed = await section.locator("li").count();
+  // the summary sits beside the heading, in the heading's own row
+  // "Record cash received" also matches a loose text search, so match the heading exactly
+  const heading = p.getByRole("heading", { name: "Cash received", exact: true });
+  const header = (await heading.locator("xpath=following-sibling::p[1]").innerText()).trim();
+  const listed = await p.locator("table tbody tr").count();
 
   console.log("db: total cash-in rows", inDb.length, "| confirmed", confirmed.length, "| confirmed total", total);
   console.log("page header:", header);
   console.log("rows listed:", listed, "(db has", inDb.length + ")", "match:", listed === Math.min(inDb.length, 300));
 
-  const text = await section.innerText();
-  console.log("shows a confirmed badge:", /confirmed/.test(text));
-  console.log("shows waiting rows too:", /waiting/.test(text));
+  const text = await p.locator("table").innerText();
+  console.log("shows a confirmed badge:", /confirmed/i.test(text));
+  console.log("shows sent-back rows too:", /sent back/i.test(text));
 
   await p.screenshot({ path: "docs/team-cash.png", fullPage: true });
   console.log("page errors:", errs.length ? errs.slice(0, 2) : "none");

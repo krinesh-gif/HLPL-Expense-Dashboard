@@ -36,7 +36,7 @@ export default async function CashPage() {
   ]);
 
   return (
-    <div className="mx-auto max-w-lg space-y-5">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Cash in hand</h1>
         <p className="mt-0.5 text-sm text-muted">
@@ -44,6 +44,8 @@ export default async function CashPage() {
         </p>
       </div>
 
+      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+        <div className="space-y-5">
       <div className="card p-5">
         <p className="text-xs uppercase tracking-wider text-muted">Your cash in hand</p>
         <p className={`num mt-1 text-3xl font-semibold ${float.balance < 0 ? "text-danger" : ""}`}>
@@ -68,7 +70,10 @@ export default async function CashPage() {
       />
 
       <CashReceivedForm />
+      <CountForm bookBalance={float.balance} />
+        </div>
 
+        <div className="space-y-6">
       <CashInHistory
         rows={recent.map((t) => ({
           id: t.id,
@@ -82,8 +87,6 @@ export default async function CashPage() {
           rejectedReason: t.rejectedReason,
         }))}
       />
-
-      <CountForm bookBalance={float.balance} />
 
       {counts.length > 0 && (
         <section className="card p-5">
@@ -104,6 +107,8 @@ export default async function CashPage() {
           </ul>
         </section>
       )}
+        </div>
+      </div>
     </div>
   );
 }
