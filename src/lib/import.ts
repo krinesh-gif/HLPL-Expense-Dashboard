@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import type { CostCenter, PaymentMode, Role } from "@prisma/client";
 import { prisma } from "./prisma";
@@ -18,6 +19,8 @@ export type LegacyFiles = { founder: Buffer; wh: Buffer; ho: Buffer };
 export type ImportResult = {
   expenses: number;
   cashTxns: number;
+  /// rows in the files that were already here and so were not touched
+  skipped: number;
   stats: Record<string, number>;
   unmapped: { label: string; count: number }[];
 };
@@ -43,6 +46,32 @@ function sheet(wb: ExcelJS.Workbook, name: string, which: string) {
   }
   return ws;
 }
+
+/**
+ * A stable identity for a legacy row.
+ *
+ * Keys used to be the row's position in the sheet, which meant inserting one line
+ * near the top re-keyed everything below it and the next import saw the whole file
+ * as new. The key is now derived from the row's own content, so the same entry
+ * keeps its identity wherever it moves to. Genuinely identical rows — two ₹100 tea
+ * bills on the same day — are told apart by an occurrence number.
+ */
+function makeKeyer() {
+  const seen = new Map<string, number>();
+  return (source: string, ...parts: unknown[]): string => {
+    const body = parts.map((p) => (p instanceof Date ? p.toISOString().slice(0, 10) : String(p ?? ""))).join("|");
+    const base = `${source}:${createHash("sha1").update(body).digest("hex").slice(0, 16)}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
+  };
+}
+
+/** Identifies a row by what it is, for matching against rows imported under the old scheme. */
+const expenseSig = (e: { date: Date; amount: number; costCenter: string; description?: string | null }) =>
+  [e.date.toISOString().slice(0, 10), Number(e.amount).toFixed(2), e.costCenter, e.description ?? ""].join("|");
+const cashSig = (c: { date: Date; amount: number; type: string; toCostCenter?: string | null }) =>
+  [c.date.toISOString().slice(0, 10), Number(c.amount).toFixed(2), c.type, c.toCostCenter ?? ""].join("|");
 
 /** Cash custodians: money handed to them is a float transfer, not a spend. */
 const CUSTODIAN: Record<string, CostCenter> = {
@@ -221,8 +250,7 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     HO: (await authorFor("HO")).id,
   };
 
-  await prisma.expense.deleteMany({ where: { legacyRef: { not: null } } });
-  await prisma.cashTxn.deleteMany({ where: { legacyRef: { not: null } } });
+  const key = makeKeyer();
 
   const wbF = await load(files.founder, "founder");
   const wbW = await load(files.wh, "warehouse");
@@ -244,7 +272,7 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     const paidTo = str(r.paidTo);
     const cc = custodianOf(paidTo);
     const pm = mode(r.mode);
-    const ref = `founder:ledger:${i + 6}`;
+    const ref = key("founder:ledger", date, amount, str(r.category), str(r.description), paidTo);
 
     if (cc && pm === "CASH") {
       // Held back until the team books are read: a hand-over only counts as a float
@@ -266,7 +294,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     const date = asDate(r.date); const amount = num(r.amount);
     if (!date || amount <= 0) continue;
     cashTxns.push({ date, type: "RECEIPT", amount, source: str(r.source) || "Other", mode: "CASH",
-      note: str(r.purpose) || null, createdById: founder.id, legacyRef: `founder:inflow:${i + 6}` });
+      note: str(r.purpose) || null, createdById: founder.id,
+      legacyRef: key("founder:inflow", date, amount, str(r.source), str(r.purpose)) });
     bump("founder receipts");
   }
 
@@ -277,7 +306,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     const date = asDate(r.date); const amount = num(r.amount);
     if (!date || amount <= 0) continue;
     cashTxns.push({ date, type: "DRAWING", amount, source: str(r.director) || "Director", mode: "CASH",
-      note: str(r.purpose) || null, createdById: founder.id, legacyRef: `founder:drawing:${i + 5}` });
+      note: str(r.purpose) || null, createdById: founder.id,
+      legacyRef: key("founder:drawing", date, amount, str(r.director), str(r.purpose)) });
     bump("director drawings");
   }
 
@@ -289,7 +319,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     if (!date || amount <= 0) continue;
     expenses.push({ date, costCenter: "FOUNDER", categoryId: resolveCategory(str(r.category), str(r.description)),
       amount, paymentMode: mode(r.mode), paidTo: str(r.paidTo) || null,
-      description: str(r.description) || null, enteredById: founder.id, legacyRef: `founder:hist:${i + 5}` });
+      description: str(r.description) || null, enteredById: founder.id,
+      legacyRef: key("founder:hist", date, amount, str(r.category), str(r.description), str(r.paidTo)) });
     bump("historical expenses");
   }
 
@@ -302,8 +333,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
       if (!date) continue;
       const label = str(r.category);
       const desc = [str(r.description), str(r.remark)].filter(Boolean).join(" — ");
-      const ref = `${cc.toLowerCase()}:cashbook:${i + 6}`;
       const cin = num(r.cashIn); const cout = num(r.cashOut);
+      const ref = key(`${cc.toLowerCase()}:cashbook`, date, cin || cout, label, desc, cin > 0 ? "in" : "out");
 
       if (cin > 0) {
         // Cash arriving into a team float. If the founder's book already records the
@@ -355,12 +386,74 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     }
   }
 
-  await prisma.expense.createMany({ data: expenses });
-  await prisma.cashTxn.createMany({ data: cashTxns });
+  // Only what is not already here. Rows imported before are left exactly as they
+  // are, so a category re-tagged by hand survives the next import of the sheet.
+  const [haveExp, haveCash] = await Promise.all([
+    prisma.expense.findMany({
+      where: { legacyRef: { not: null } },
+      select: { id: true, legacyRef: true, date: true, amount: true, costCenter: true, description: true },
+    }),
+    prisma.cashTxn.findMany({
+      where: { legacyRef: { not: null } },
+      select: { id: true, legacyRef: true, date: true, amount: true, type: true, toCostCenter: true },
+    }),
+  ]);
+
+  const expRefs = new Set(haveExp.map((e) => e.legacyRef!));
+  const cashRefs = new Set(haveCash.map((c) => c.legacyRef!));
+
+  // Rows imported under the old positional scheme carry a key that will never match
+  // again. Match those by content once and give them the stable key, rather than
+  // inserting a second copy of something already here.
+  const oldExp = new Map<string, string>();
+  for (const e of haveExp) {
+    if (/:\d+$/.test(e.legacyRef!)) {
+      oldExp.set(expenseSig({ ...e, amount: Number(e.amount) }), e.id);
+    }
+  }
+  const oldCash = new Map<string, string>();
+  for (const c of haveCash) {
+    if (/:\d+$/.test(c.legacyRef!)) {
+      oldCash.set(cashSig({ ...c, amount: Number(c.amount) }), c.id);
+    }
+  }
+
+  const freshExp: typeof expenses = [];
+  let rekeyed = 0;
+  for (const e of expenses) {
+    if (expRefs.has(e.legacyRef)) { bump("already imported, left alone"); continue; }
+    const match = oldExp.get(expenseSig({ ...e, amount: Number(e.amount) }));
+    if (match) {
+      await prisma.expense.update({ where: { id: match }, data: { legacyRef: e.legacyRef } });
+      oldExp.delete(expenseSig({ ...e, amount: Number(e.amount) }));
+      rekeyed++;
+      continue;
+    }
+    freshExp.push(e);
+  }
+
+  const freshCash: typeof cashTxns = [];
+  for (const c of cashTxns) {
+    if (cashRefs.has(c.legacyRef)) { bump("already imported, left alone"); continue; }
+    const match = oldCash.get(cashSig({ ...c, amount: Number(c.amount) }));
+    if (match) {
+      await prisma.cashTxn.update({ where: { id: match }, data: { legacyRef: c.legacyRef } });
+      oldCash.delete(cashSig({ ...c, amount: Number(c.amount) }));
+      rekeyed++;
+      continue;
+    }
+    freshCash.push(c);
+  }
+
+  if (rekeyed > 0) bump("matched to rows imported earlier", rekeyed);
+
+  await prisma.expense.createMany({ data: freshExp, skipDuplicates: true });
+  await prisma.cashTxn.createMany({ data: freshCash, skipDuplicates: true });
 
   return {
-    expenses: expenses.length,
-    cashTxns: cashTxns.length,
+    expenses: freshExp.length,
+    cashTxns: freshCash.length,
+    skipped: expenses.length - freshExp.length + cashTxns.length - freshCash.length,
     stats: Object.fromEntries(Object.entries(stats).sort()),
     unmapped: [...unmapped].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([label, count]) => ({ label, count })),
   };
