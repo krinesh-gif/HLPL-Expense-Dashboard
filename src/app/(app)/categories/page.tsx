@@ -31,11 +31,14 @@ export default async function CategoriesPage() {
         <div>
           <h1 className="text-lg font-semibold">Category master</h1>
           <p className="text-sm text-muted">
-            Every expense maps to one head here. Budgets drive the warnings your team sees at entry.
+            Every expense maps to one head here. Set a monthly budget on a head to warn
+            your team at the moment they record against it.
           </p>
         </div>
         <p className="text-sm text-muted">
-          Budgeted <span className="num font-semibold text-ink">{rs(budgeted)}</span> / month ·
+          {budgeted > 0 && (
+            <>Budgeted <span className="num font-semibold text-ink">{rs(budgeted)}</span> / month · </>
+          )}
           spent this month <span className="num font-semibold text-ink">{rs(spent)}</span>
         </p>
       </div>
