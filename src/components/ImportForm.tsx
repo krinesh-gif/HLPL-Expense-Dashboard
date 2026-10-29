@@ -20,7 +20,7 @@ export default function ImportForm() {
   const missing = FIELDS.filter((f) => !picked[f.name]);
   const total = Object.values(picked).reduce((a, p) => a + p.size, 0);
   const tooBig = total > MAX_TOTAL;
-  const ready = missing.length === 0 && !tooBig;
+  const ready = chosen.length > 0 && !tooBig;
 
   return (
     <>
@@ -28,10 +28,11 @@ export default function ImportForm() {
         {FIELDS.map((f) => (
           <div key={f.name}>
             <label className="label" htmlFor={`f-${f.name}`}>
-              {f.label} <span className="font-normal text-muted">— {f.hint}</span>
+              {f.label}{" "}
+              <span className="font-normal text-muted">— {f.hint} · optional</span>
             </label>
             <input
-              id={`f-${f.name}`} name={f.name} type="file" accept=".xlsx" required
+              id={`f-${f.name}`} name={f.name} type="file" accept=".xlsx"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 setPicked((p) => {
@@ -61,10 +62,11 @@ export default function ImportForm() {
           </p>
         )}
 
-        {!tooBig && missing.length > 0 && chosen.length > 0 && (
-          <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">
-            Still need the {missing.map((f) => f.label.replace(" workbook", "")).join(" and ")} workbook
-            {missing.length > 1 ? "s" : ""}. All three are imported together.
+        {!tooBig && chosen.length > 0 && missing.length > 0 && (
+          <p className="rounded-lg bg-canvas px-3 py-2 text-xs text-muted">
+            Importing the {chosen.map((f) => f.label.replace(" workbook", "")).join(" and ")} workbook
+            {chosen.length > 1 ? "s" : ""} only. Hand-overs are still checked against what the
+            other books already recorded, so nothing gets counted twice.
           </p>
         )}
 
@@ -75,11 +77,11 @@ export default function ImportForm() {
         <button type="submit" disabled={pending || !ready} className="btn-primary w-full py-3">
           {pending
             ? "Importing… this takes a few seconds"
-            : missing.length > 0
-              ? `Choose all three files (${chosen.length} of 3)`
-              : tooBig
-                ? "Files are too large"
-                : "Import"}
+            : tooBig
+              ? "Files are too large"
+              : chosen.length === 0
+                ? "Choose at least one workbook"
+                : `Import ${chosen.length} workbook${chosen.length > 1 ? "s" : ""}`}
         </button>
       </form>
 

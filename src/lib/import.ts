@@ -14,7 +14,7 @@ import { NON_EXPENSE_LABELS } from "../../prisma/seed-data";
  * WH/HO teams when they spent it. Those rows become float ISSUE transfers, so
  * group totals stop double-counting.
  */
-export type LegacyFiles = { founder: Buffer; wh: Buffer; ho: Buffer };
+export type LegacyFiles = { founder?: Buffer; wh?: Buffer; ho?: Buffer };
 
 export type ImportResult = {
   expenses: number;
@@ -25,7 +25,8 @@ export type ImportResult = {
   unmapped: { label: string; count: number }[];
 };
 
-async function load(buf: Buffer, which: string) {
+async function load(buf: Buffer | undefined, which: string) {
+  if (!buf) return null;
   try {
     const wb = new ExcelJS.Workbook();
     // ExcelJS types the reader as accepting a Node stream, but a Buffer works and
@@ -165,6 +166,8 @@ function custodianOf(paidTo: string): CostCenter | null {
 type FounderIssue = {
   date: Date; amount: number; cc: CostCenter; used: boolean;
   ref: string; paidTo: string; description: string; category: string;
+  /// set when this came from a previous import rather than the file in hand
+  existingId?: string;
 };
 
 /** Cash to a custodian that the team never acknowledged and that reads as a personal
@@ -181,25 +184,25 @@ const PERSONAL = /personal|advance|shagun|salary|loan/i;
 function consumeFounderIssues(
   pool: FounderIssue[],
   cc: CostCenter, date: Date, amount: number, windowDays = 10,
-): boolean {
+): FounderIssue | null {
   const near = pool
     .map((x, i) => ({ x, i }))
     .filter(({ x }) => !x.used && x.cc === cc && Math.abs(+x.date - +date) <= windowDays * 864e5);
 
   const eq = (a: number, b: number) => Math.abs(a - b) < 1;
 
-  for (const a of near) if (eq(a.x.amount, amount)) { pool[a.i].used = true; return true; }
+  for (const a of near) if (eq(a.x.amount, amount)) { pool[a.i].used = true; return pool[a.i]; }
   for (let i = 0; i < near.length; i++)
     for (let j = i + 1; j < near.length; j++) {
       if (eq(near[i].x.amount + near[j].x.amount, amount)) {
-        pool[near[i].i].used = pool[near[j].i].used = true; return true;
+        pool[near[i].i].used = pool[near[j].i].used = true; return pool[near[i].i];
       }
       for (let k = j + 1; k < near.length; k++)
         if (eq(near[i].x.amount + near[j].x.amount + near[k].x.amount, amount)) {
-          pool[near[i].i].used = pool[near[j].i].used = pool[near[k].i].used = true; return true;
+          pool[near[i].i].used = pool[near[j].i].used = pool[near[k].i].used = true; return pool[near[i].i];
         }
     }
-  return false;
+  return null;
 }
 
 // ---- main ------------------------------------------------------------------
@@ -258,13 +261,31 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
 
   const expenses: any[] = [];
   const cashTxns: any[] = [];
+  /// stored transfers that this import has shown both sides of
+  const confirmIds = new Set<string>();
   const stats: Record<string, number> = {};
   const bump = (k: string, by = 1) => { stats[k] = (stats[k] ?? 0) + by; };
 
-  // 1. Founder cash ledger -> expenses, except custodian hand-overs -> ISSUE
-  const ledger = readSheet(sheet(wbF, "💵 Cash Ledger", "founder"), 5,
-    ["", "date", "month", "category", "amount", "description", "paidTo", "mode", "paidBy", "", "billNo", "remark"]);
   const issuesFromFounder: FounderIssue[] = [];
+
+  // Hand-overs the founder already recorded in an earlier import. A team book
+  // uploaded on its own still has to match against these, or the same transfer
+  // would be counted twice - once from each side's book.
+  const priorFounderIssues = await prisma.cashTxn.findMany({
+    where: { type: "ISSUE", legacyRef: { startsWith: "founder:ledger" }, voidedAt: null },
+    select: { id: true, date: true, amount: true, toCostCenter: true },
+  });
+  for (const t of priorFounderIssues) {
+    if (!t.toCostCenter) continue;
+    issuesFromFounder.push({
+      date: t.date, amount: Number(t.amount), cc: t.toCostCenter, used: false,
+      ref: "", paidTo: "", description: "", category: "", existingId: t.id,
+    });
+  }
+
+  // 1. Founder cash ledger -> expenses, except custodian hand-overs -> ISSUE
+  const ledger = wbF ? readSheet(sheet(wbF, "💵 Cash Ledger", "founder"), 5,
+    ["", "date", "month", "category", "amount", "description", "paidTo", "mode", "paidBy", "", "billNo", "remark"]) : [];
 
   for (const [i, r] of ledger.entries()) {
     const date = asDate(r.date); const amount = num(r.amount);
@@ -288,8 +309,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
   }
 
   // 2. Founder cash inflow -> RECEIPT into the founder chest
-  const inflow = readSheet(sheet(wbF, "💰 Cash Inflow", "founder"), 5,
-    ["", "date", "source", "amount", "purpose", "receivedBy"]);
+  const inflow = wbF ? readSheet(sheet(wbF, "💰 Cash Inflow", "founder"), 5,
+    ["", "date", "source", "amount", "purpose", "receivedBy"]) : [];
   for (const [i, r] of inflow.entries()) {
     const date = asDate(r.date); const amount = num(r.amount);
     if (!date || amount <= 0) continue;
@@ -300,8 +321,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
   }
 
   // 3. Director drawings -> DRAWING (money leaving the business, never an expense)
-  const draw = readSheet(sheet(wbF, "👤 Director Drawings", "founder"), 4,
-    ["date", "director", "amount", "purpose"]);
+  const draw = wbF ? readSheet(sheet(wbF, "👤 Director Drawings", "founder"), 4,
+    ["date", "director", "amount", "purpose"]) : [];
   for (const [i, r] of draw.entries()) {
     const date = asDate(r.date); const amount = num(r.amount);
     if (!date || amount <= 0) continue;
@@ -312,8 +333,8 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
   }
 
   // 4. Historical FY24-25 -> founder expenses
-  const hist = readSheet(sheet(wbF, "🗂 Historical FY24-25", "founder"), 4,
-    ["", "date", "category", "description", "paidTo", "mode", "amount", "paidFrom", "type", "remark"]);
+  const hist = wbF ? readSheet(sheet(wbF, "🗂 Historical FY24-25", "founder"), 4,
+    ["", "date", "category", "description", "paidTo", "mode", "amount", "paidFrom", "type", "remark"]) : [];
   for (const [i, r] of hist.entries()) {
     const date = asDate(r.date); const amount = num(r.amount);
     if (!date || amount <= 0) continue;
@@ -326,6 +347,7 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
 
   // 5. WH / HO cash books
   for (const [cc, wb] of [["WH", wbW], ["HO", wbH]] as const) {
+    if (!wb) continue;
     const ws = sheet(wb, "💰 Cash Book", cc === "WH" ? "warehouse" : "head office");
     const rows = readSheet(ws, 5, ["date", "month", "cashIn", "cashOut", "category", "description", "", "remark"]);
     for (const [i, r] of rows.entries()) {
@@ -339,7 +361,10 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
       if (cin > 0) {
         // Cash arriving into a team float. If the founder's book already records the
         // same hand-over, skip it so the transfer is not counted twice.
-        if (consumeFounderIssues(issuesFromFounder, cc, date, cin)) {
+        const matched = consumeFounderIssues(issuesFromFounder, cc, date, cin);
+        if (matched) {
+          // Both books show this hand-over, so it is settled on both sides.
+          if (matched.existingId) confirmIds.add(matched.existingId);
           bump(`${cc} cash-in matched to founder issue`);
           continue;
         }
@@ -363,8 +388,17 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
     }
   }
 
+  // Team-side hand-overs already stored, so a founder file uploaded on its own does
+  // not record a second copy of a transfer the team's book already shows.
+  const priorTeamIssues = await prisma.cashTxn.findMany({
+    where: { type: "ISSUE", legacyRef: { not: null }, voidedAt: null,
+             NOT: { legacyRef: { startsWith: "founder:" } } },
+    select: { id: true, date: true, amount: true, toCostCenter: true },
+  }).then((rows) => rows.map((r) => ({ ...r, taken: false })));
+
   // Settle the held-back founder hand-overs now that the team books have been read.
   for (const c of issuesFromFounder) {
+    if (c.existingId) continue; // already stored by an earlier import
     if (c.used) {
       cashTxns.push({ date: c.date, type: "ISSUE", amount: c.amount, toCostCenter: c.cc, mode: "CASH",
         source: c.paidTo, note: c.description || null, createdById: founder.id, legacyRef: c.ref });
@@ -377,10 +411,20 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
         enteredById: founder.id, legacyRef: c.ref });
       bump("founder expenses (advance, not float)");
     } else {
+      const twin = priorTeamIssues.find((t) =>
+        !t.taken && t.toCostCenter === c.cc && Math.abs(Number(t.amount) - c.amount) < 1 &&
+        Math.abs(+t.date - +c.date) <= 10 * 864e5);
+      if (twin) {
+        // The team's book already records this hand-over; both sides now agree.
+        twin.taken = true;
+        confirmIds.add(twin.id);
+        bump(`${c.cc} transfers matched to the team's own book`);
+        continue;
+      }
       // genuinely in transit: issued by the founder, not yet logged by the team
       cashTxns.push({ date: c.date, type: "ISSUE", amount: c.amount, toCostCenter: c.cc, mode: "CASH",
         source: c.paidTo, note: (c.description || "") + " [not yet acknowledged by team]",
-        createdById: founder.id, legacyRef: c.ref });
+        createdById: founder.id, legacyRef: c.ref, status: "PENDING", initiatedBy: "FOUNDER" });
       bump(`float issued to ${c.cc}`, c.amount);
       bump(`${c.cc} transfers awaiting team acknowledgement`);
     }
@@ -446,6 +490,14 @@ export async function runImport(files: LegacyFiles, actorId?: string): Promise<I
   }
 
   if (rekeyed > 0) bump("matched to rows imported earlier", rekeyed);
+
+  if (confirmIds.size > 0) {
+    await prisma.cashTxn.updateMany({
+      where: { id: { in: [...confirmIds] }, status: "PENDING" },
+      data: { status: "CONFIRMED", confirmedAt: new Date() },
+    });
+    bump("transfers now agreed by both books", confirmIds.size);
+  }
 
   await prisma.expense.createMany({ data: freshExp, skipDuplicates: true });
   await prisma.cashTxn.createMany({ data: freshCash, skipDuplicates: true });

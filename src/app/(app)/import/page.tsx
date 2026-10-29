@@ -16,9 +16,9 @@ export default async function ImportPage() {
       <div>
         <h1 className="text-lg font-semibold">Import the old workbooks</h1>
         <p className="mt-1 text-sm text-muted">
-          Loads your FY24-25 and FY26-27 sheets into the dashboard. Safe to run again —
-          it replaces everything it imported last time and reloads from the files you
-          upload now.
+          Loads your FY24-25 and FY26-27 sheets into the dashboard. Upload one workbook
+          or all three — whatever has changed. Entries already here are left alone, so
+          running it again only adds what is new.
         </p>
       </div>
 

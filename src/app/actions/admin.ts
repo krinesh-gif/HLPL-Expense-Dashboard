@@ -78,9 +78,11 @@ const MAX_BYTES = 12 * 1024 * 1024;
 export async function importWorkbooks(_prev: ImportState, form: FormData): Promise<ImportState> {
   const me = await requireFounder();
 
+  // Any one workbook is enough; the importer reconciles whatever is uploaded
+  // against what is already stored.
   const read = async (field: string, label: string) => {
     const f = form.get(field);
-    if (!(f instanceof File) || f.size === 0) throw new Error(`Choose the ${label} workbook.`);
+    if (!(f instanceof File) || f.size === 0) return undefined;
     if (f.size > MAX_BYTES) throw new Error(`The ${label} file is larger than 12 MB.`);
     if (!f.name.toLowerCase().endsWith(".xlsx")) throw new Error(`${f.name} is not an .xlsx file.`);
     return Buffer.from(await f.arrayBuffer());
@@ -92,6 +94,7 @@ export async function importWorkbooks(_prev: ImportState, form: FormData): Promi
       read("wh", "warehouse"),
       read("ho", "head office"),
     ]);
+    if (!founder && !wh && !ho) return { error: "Choose at least one workbook." };
     const result = await runImport({ founder, wh, ho }, me.uid);
     revalidatePath("/dashboard");
     revalidatePath("/expenses");
