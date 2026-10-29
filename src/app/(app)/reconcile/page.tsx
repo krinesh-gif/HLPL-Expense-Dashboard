@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import CountForm from "@/components/CountForm";
 import CashReceivedForm from "@/components/CashReceivedForm";
 import TransferList from "@/components/TransferList";
+import CashInHistory from "@/components/CashInHistory";
 
 export default async function CashPage() {
   const s = await requireUser();
@@ -21,10 +22,11 @@ export default async function CashPage() {
       },
       orderBy: { date: "desc" },
     }),
+    // every rupee that has come in, whatever state it is in
     prisma.cashTxn.findMany({
-      where: { toCostCenter: s.costCenter, voidedAt: null },
+      where: { toCostCenter: s.costCenter, voidedAt: null, type: { in: ["ISSUE", "RECEIPT"] } },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      take: 12,
+      take: 300,
     }),
     prisma.cashCount.findMany({
       where: { costCenter: s.costCenter },
@@ -32,8 +34,6 @@ export default async function CashPage() {
       include: { countedBy: { select: { name: true } } },
     }),
   ]);
-
-  const myClaims = recent.filter((t) => t.status === "PENDING" && t.initiatedBy !== "FOUNDER");
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -69,20 +69,19 @@ export default async function CashPage() {
 
       <CashReceivedForm />
 
-      {myClaims.length > 0 && (
-        <section className="card p-5">
-          <h2 className="text-sm font-semibold">Waiting on Krinesh</h2>
-          <ul className="mt-3 divide-y divide-line text-sm">
-            {myClaims.map((t) => (
-              <li key={t.id} className="flex items-baseline justify-between gap-3 py-2">
-                <span className="text-muted">{t.date.toISOString().slice(0, 10)}</span>
-                <span className="num font-medium">{rs(t.amount)}</span>
-                <span className="text-xs text-warn">not confirmed yet</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <CashInHistory
+        rows={recent.map((t) => ({
+          id: t.id,
+          date: t.date.toISOString().slice(0, 10),
+          amount: Number(t.amount),
+          source: t.source,
+          note: t.note,
+          type: t.type,
+          status: t.status,
+          initiatedBy: t.initiatedBy,
+          rejectedReason: t.rejectedReason,
+        }))}
+      />
 
       <CountForm bookBalance={float.balance} />
 
